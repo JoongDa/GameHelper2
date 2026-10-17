@@ -1,0 +1,3 @@
+[submodule "Plugins/StashUtility"]
+	path = Plugins/StashUtility
+	url = https://github.com/JoongDa/StashUtility.git
