@@ -1,0 +1,78 @@
+{
+  "EnableAutoQuit": false,
+  "AutoQuitCondition": {
+    "conditionSource": "PlayerVitals.HP.Percent <= 30",
+    "component": null
+  },
+  "EnableAutoQuitKey": false,
+  "AutoQuitKey": 122,
+  "Profiles": {
+    "LeagueStartDefaultProfile": {
+      "Rules": [
+        {
+          "Conditions": [
+            {
+              "conditionSource": "PlayerVitals.HP.Percent <= 80 && Flasks.Flask1.IsUsable && !Flasks.Flask1.Active",
+              "component": null
+            }
+          ],
+          "delayBetweenRuns": 0.0,
+          "Enabled": true,
+          "Name": "LifeFlask",
+          "Key": 49
+        },
+        {
+          "Conditions": [
+            {
+              "conditionSource": "PlayerVitals.MANA.Percent <= 30 && Flasks.Flask2.IsUsable && !Flasks.Flask2.Active",
+              "component": null
+            }
+          ],
+          "delayBetweenRuns": 0.0,
+          "Enabled": true,
+          "Name": "ManaFlask",
+          "Key": 50
+        }
+      ]
+    },
+    "ProfileMidGame": {
+      "Rules": []
+    },
+    "ProfileEndGame": {
+      "Rules": []
+    },
+    "FlickerStrike": {
+      "Rules": [
+        {
+          "Conditions": [
+            {
+              "conditionSource": "\nPlayerBuffs[\"power_charge_79\"].Charges > 0 &&\n(\n    PlayerBuffs[\"charged_staff_stack_79\"].TimeLeft < 2.0 ||\n    PlayerBuffs[\"power_charge_79\"].TimeLeft < 2.0\n)\n",
+              "component": null
+            }
+          ],
+          "delayBetweenRuns": 1.0,
+          "Enabled": true,
+          "Name": "ChargedStaff_Refresh",
+          "Key": 82
+        },
+        {
+          "Conditions": [
+            {
+              "conditionSource": "\nPlayerBuffs[\"power_charge_79\"].Charges >= 3 &&\nPlayerBuffs[\"charged_staff_stack_79\"].Charges >= 3 &&\nPlayerBuffs[\"charged_staff_stack_79\"].TimeLeft > 5.0\n",
+              "component": null
+            }
+          ],
+          "delayBetweenRuns": 0.5,
+          "Enabled": true,
+          "Name": "FlickerStrike_Auto",
+          "Key": 84
+        }
+      ]
+    }
+  },
+  "CurrentProfile": "FlickerStrike",
+  "DebugMode": false,
+  "ShouldRunInHideout": false,
+  "DumpStatusEffectOnMe": 121,
+  "ScanUniqueInvulnMarkers": false
+}
