@@ -4,3 +4,6 @@
 [submodule "Plugins/Autopot"]
 	path = Plugins/Autopot
 	url = https://github.com/JoongDa/Autopot.git
+[submodule "Plugins/StashValue"]
+	path = Plugins/StashValue
+	url = https://github.com/JoongDa/StashValue.git
