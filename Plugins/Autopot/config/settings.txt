@@ -1,0 +1,22 @@
+{
+  "EnableAutoPot": false,
+  "LogicMode": 0,
+  "HpThresholdPercent": 80,
+  "MpThresholdPercent": 50,
+  "HpDisconnectEnabled": false,
+  "HpDisconnectPercent": 10,
+  "EsDisconnectEnabled": false,
+  "EsDisconnectPercent": 10,
+  "MpDisconnectEnabled": false,
+  "MpDisconnectPercent": 10,
+  "SafetyLogoutCooldownSeconds": 120,
+  "SafetyLogoutRequireRecovery": true,
+  "Key1Enabled": true,
+  "Key1": 49,
+  "Key2Enabled": true,
+  "Key2": 50,
+  "Key1DelayMs": 2000,
+  "Key2DelayMs": 2000,
+  "ShowVitalsOverlay": false,
+  "RunInHideout": false
+}
