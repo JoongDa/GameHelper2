@@ -1,3 +1,6 @@
 [submodule "Plugins/StashUtility"]
 	path = Plugins/StashUtility
 	url = https://github.com/JoongDa/StashUtility.git
+[submodule "Plugins/Autopot"]
+	path = Plugins/Autopot
+	url = https://github.com/JoongDa/Autopot.git
