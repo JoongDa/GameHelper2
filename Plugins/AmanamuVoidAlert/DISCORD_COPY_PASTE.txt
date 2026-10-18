@@ -1,0 +1,11 @@
+https://github.com/MordWraith/AmanamuVoidAlert
+
+GameHelper2 plugin for Abyss / Amanamu void mechanics: tracks Lightless monsters, shows on-screen labels and off-screen arrows (inside vs outside the void cloud), optional circles, rare/unique filter, and a debug window. Ported from 1k4ru5g3's PoeFixer plugin; GameHelper2 port by MordWraith. Read-only overlay — no input automation.
+
+Build from source only (no prebuilt DLL). Clone into Plugins/AmanamuVoidAlert inside your GameHelper2 tree, then dotnet build GameHelper and the plugin. Enable it under GameHelper -> Plugins.
+
+Compatible with Gordin GameHelper2 main, .NET 10 (net10.0-windows, x64). Tested on upstream main @ 4f6fd2a (June 2026); should work on community forks using the same API.
+
+Feedback / feature requests: this thread. Crashes or install issues: #help with tag plugin.
+
+Community third-party plugin, not affiliated with GGG or PoeFixer. Use at your own risk; only build from the linked source.
