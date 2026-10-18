@@ -2516,29 +2516,88 @@ namespace StashUtility
                 }
             }
 
-            bool passesNumericalFilters = true;
-            if (isWaystone)
+            // Check whether a value satisfies the enabled minimum and maximum bounds.
+            static bool MatchRange(
+                int value,
+                bool useMin, int min,
+                bool useMax, int max)
             {
-                if (Settings.FilterMaxRevives && revives > Settings.MaxRevivesAvailable) passesNumericalFilters = false;
-                if (Settings.FilterMinItemRarity && sumRarity < Settings.MinItemRarity) passesNumericalFilters = false;
-                if (Settings.FilterMaxItemRarity && sumRarity > Settings.MaxItemRarity) passesNumericalFilters = false;
-                if (Settings.FilterMinPackSize && sumPackSize < Settings.MinPackSize) passesNumericalFilters = false;
-                if (Settings.FilterMaxPackSize && sumPackSize > Settings.MaxPackSize) passesNumericalFilters = false;
-                if (Settings.FilterMinMonsterRarity && sumMonstRarity < Settings.MinMonsterRarity) passesNumericalFilters = false;
-                if (Settings.FilterMaxMonsterRarity && sumMonstRarity > Settings.MaxMonsterRarity) passesNumericalFilters = false;
-                if (Settings.FilterMinMonsterEffectiveness && sumEffect < Settings.MinMonsterEffectiveness) passesNumericalFilters = false;
-                if (Settings.FilterMaxMonsterEffectiveness && sumEffect > Settings.MaxMonsterEffectiveness) passesNumericalFilters = false;
-                if (Settings.FilterMinWaystoneDropChance && sumDropChance < Settings.MinWaystoneDropChance) passesNumericalFilters = false;
-                if (Settings.FilterMaxWaystoneDropChance && sumDropChance > Settings.MaxWaystoneDropChance) passesNumericalFilters = false;
-                if (Settings.FilterMinExplicitMods && explicitModsCount < Settings.MinExplicitMods) passesNumericalFilters = false;
-                if (Settings.FilterMaxExplicitMods && explicitModsCount > Settings.MaxExplicitMods) passesNumericalFilters = false;
+                return (useMin || useMax)
+                    && (!useMin || value >= min)
+                    && (!useMax || value <= max);
             }
 
-            if ((isTablet || isJewel) && !isBad && !isGood) return;
+            // Normal filtering uses OR logic across different attributes.
+            bool normalMatch = false;
 
-            if (isWaystone && Settings.FilterBadModsOnlyOnHighlighted && !passesNumericalFilters) return;
+            if (isWaystone)
+            {
+                normalMatch =
+                    MatchRange(
+                        sumRarity,
+                        Settings.FilterMinItemRarity, Settings.MinItemRarity,
+                        Settings.FilterMaxItemRarity, Settings.MaxItemRarity)
 
-            if (!isBad && !passesNumericalFilters) return;
+                    || MatchRange(
+                        sumPackSize,
+                        Settings.FilterMinPackSize, Settings.MinPackSize,
+                        Settings.FilterMaxPackSize, Settings.MaxPackSize)
+
+                    || MatchRange(
+                        sumMonstRarity,
+                        Settings.FilterMinMonsterRarity, Settings.MinMonsterRarity,
+                        Settings.FilterMaxMonsterRarity, Settings.MaxMonsterRarity)
+
+                    || MatchRange(
+                        sumEffect,
+                        Settings.FilterMinMonsterEffectiveness,
+                        Settings.MinMonsterEffectiveness,
+                        Settings.FilterMaxMonsterEffectiveness,
+                        Settings.MaxMonsterEffectiveness)
+
+                    || MatchRange(
+                        sumDropChance,
+                        Settings.FilterMinWaystoneDropChance,
+                        Settings.MinWaystoneDropChance,
+                        Settings.FilterMaxWaystoneDropChance,
+                        Settings.MaxWaystoneDropChance)
+
+                    || MatchRange(
+                        explicitModsCount,
+                        Settings.FilterMinExplicitMods, Settings.MinExplicitMods,
+                        Settings.FilterMaxExplicitMods, Settings.MaxExplicitMods);
+
+                // Revive count is a shared constraint for both normal and great filters.
+                if (Settings.FilterMaxRevives &&
+                    revives > Settings.MaxRevivesAvailable)
+                {
+                    normalMatch = false;
+                    isGreat = false;
+                }
+            }
+
+            // Evaluate normal and great filters independently
+            if (isWaystone)
+            {
+                bool numericMatched = normalMatch || isGreat;
+
+                // Preserve optional bad-mod filtering.
+                if (Settings.FilterBadModsOnlyOnHighlighted &&
+                    isBad && !numericMatched)
+                {
+                    isBad = false;
+                }
+
+                // Skip rendering when neither numeric nor mod-based criteria match.
+                if (!numericMatched && !isGood && !isBad)
+                {
+                    return;
+                }
+            }
+            else if ((isTablet || isJewel) && !isBad && !isGood)
+            {
+                return;
+            }
 
             float scale = size.X / 52.0f;
             float margin = Settings.BorderMargin * scale; // Adaptive margin for 4K scaling where bounding boxes overlap
@@ -2551,7 +2610,11 @@ namespace StashUtility
                 return;
             }
 
-            if (showModBorder && (isBad || isGood || passesNumericalFilters))
+            bool shouldDrawModBorder = isWaystone
+                ? (normalMatch || isGood || isBad)
+                : (isBad || isGood);
+
+            if (showModBorder && shouldDrawModBorder)
             {
                 Vector4 borderCol = isJewel
                     ? (isBad ? Settings.JewelBadColor : Settings.JewelGoodColor)
