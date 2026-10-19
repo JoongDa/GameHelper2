@@ -19,7 +19,7 @@ namespace StashUtility
     using System.Reflection;
     using System.Runtime.InteropServices;
 
-    public sealed class StashUtilityCore : PCore<StashUtilitySettings>
+    public sealed partial class StashUtilityCore : PCore<StashUtilitySettings>
     {
         private object handleObj;
         private MethodInfo readStdWStringMethod;
@@ -83,6 +83,7 @@ namespace StashUtility
 
         public override void OnDisable()
         {
+            ResetEquipmentState();
         }
 
         public override void OnEnable(bool isGameOpened)
@@ -100,6 +101,10 @@ namespace StashUtility
                     // Fallback to defaults
                 }
             }
+
+            Settings.Equipment ??= new EquipmentSettings();
+            Settings.Equipment.Normalize();
+            ResetEquipmentState();
 
             if (Settings.ScanEndOffset < 0x500)
             {
@@ -1087,6 +1092,9 @@ namespace StashUtility
                 ImGui.Unindent();
             }
 
+            DrawEquipmentManagerSettings();
+            if (Settings.EnableDebugProbe) DrawEquipmentDebugInspector();
+
             if (ImGui.CollapsingHeader(PluginText.T("stashutility.visual_settings_header", "Overlay Visual Settings")))
             {
                 ImGui.Checkbox(PluginText.T("stashutility.show_waystone_mod_border", "Show Waystone Mod Highlight Border"), ref Settings.ShowModBorder);
@@ -1278,7 +1286,8 @@ namespace StashUtility
 
         public override void DrawUI()
         {
-            if (!Settings.EnableWaystoneManager && !Settings.EnableTabletManager && !Settings.EnableJewelManager && !Settings.EnableDebugProbe && !Settings.EnableMerchantPurchasePanel) return;
+            BeginEquipmentFrame();
+            if (!Settings.EnableWaystoneManager && !Settings.EnableTabletManager && !Settings.EnableJewelManager && !Settings.Equipment.Enabled && !Settings.EnableDebugProbe && !Settings.EnableMerchantPurchasePanel) return;
 
             if (!Settings.ShowOverlayInBackground && !Core.Process.Foreground)
             {
@@ -1307,7 +1316,7 @@ namespace StashUtility
                 DrawDebugOverlay();
             }
 
-            if (Settings.EnableWaystoneManager || Settings.EnableTabletManager || Settings.EnableJewelManager)
+            if (Settings.EnableWaystoneManager || Settings.EnableTabletManager || Settings.EnableJewelManager || Settings.Equipment.Enabled || Settings.EnableDebugProbe)
             {
                 bool isCoopMode = Core.GHSettings.EnableControllerMode && gameUi.LeftPanel.Address != IntPtr.Zero;
 
@@ -2171,6 +2180,12 @@ namespace StashUtility
             var name = baseComponent.BaseItemName;
             var path = item.Path;
             var internalNameStr = baseComponent.InternalName;
+
+            if (TryGetEquipmentCategory(path, out _))
+            {
+                ProcessEquipmentItem(item, pos, size);
+                return;
+            }
 
             bool isWaystone = (!string.IsNullOrEmpty(name) && name.Contains("Waystone")) || path.Contains("MapKey", StringComparison.OrdinalIgnoreCase) || path.Contains("Waystone", StringComparison.OrdinalIgnoreCase);
             bool isTablet = (!string.IsNullOrEmpty(name) && name.Contains("Tablet")) || path.Contains("TowerAugment", StringComparison.OrdinalIgnoreCase) || path.Contains("Tablet", StringComparison.OrdinalIgnoreCase);

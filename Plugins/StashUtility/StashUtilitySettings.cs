@@ -1,6 +1,7 @@
 namespace StashUtility
 {
     using GameHelper.Plugin;
+    using System;
     using System.Collections.Generic;
     using System.Numerics;
 
@@ -129,6 +130,9 @@ namespace StashUtility
         public Dictionary<string, float> JewelModRequiredMinRolls = new();
         public Dictionary<string, List<StashUtility.Models.JewelGroup>> JewelCategoryGroups = new();
 
+        // Equipment settings are independent of all existing item managers.
+        public EquipmentSettings Equipment = new();
+
         // Debug Probe Mode
         public bool EnableDebugProbe = false;
         public bool EnableMerchantPurchasePanel = false;
@@ -146,6 +150,34 @@ namespace StashUtility
         };
 
         public Dictionary<string, TabletProfile> TabletProfiles = new();
+    }
+
+    public sealed class EquipmentSettings
+    {
+        public bool Enabled = false;
+        public Dictionary<string, List<Models.EquipmentGroup>> CategoryGroups = new(StringComparer.Ordinal);
+        public Vector4 HighlightColor = new(0.1f, 0.9f, 0.5f, 1f);
+        public float BorderThickness = 3f;
+        public float BorderMargin = 4f;
+        public int FrameStyle = 0;
+
+        /// <summary>Initializes missing equipment fields without changing legacy settings.</summary>
+        public void Normalize()
+        {
+            this.CategoryGroups ??= new(StringComparer.Ordinal);
+            foreach (var category in new List<string>(this.CategoryGroups.Keys))
+            {
+                var groups = this.CategoryGroups[category] ??= new();
+                groups.RemoveAll(group => group == null);
+                foreach (var group in groups)
+                {
+                    if (string.IsNullOrWhiteSpace(group.Id)) group.Id = Guid.NewGuid().ToString();
+                    group.ModPatternIds ??= new();
+                    group.ModRequiredMinRolls ??= new();
+                    group.ModRequiredMinRollsValue1 ??= new();
+                }
+            }
+        }
     }
 
     public class TabletProfile

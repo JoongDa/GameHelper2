@@ -159,6 +159,99 @@ namespace StashUtility.Data
 
         public static readonly List<JewelMod> AllJewelMods = LoadJewelMods();
 
+        public static string EquipmentLoadError { get; private set; } = string.Empty;
+        public static string EquipmentSourceVersion { get; private set; } = string.Empty;
+        public static readonly List<EquipmentMod> AllEquipmentMods = LoadEquipmentMods();
+
+        private static List<EquipmentMod> LoadEquipmentMods()
+        {
+            try
+            {
+                var asmDir = System.IO.Path.GetDirectoryName(typeof(ModDatabase).Assembly.Location) ?? "";
+                string[] candidatePaths =
+                {
+                    System.IO.Path.Combine(asmDir, "Data", "equipment_mod_ranges.json"),
+                    System.IO.Path.Combine(asmDir, "equipment_mod_ranges.json"),
+                    System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "Plugins", "StashUtility", "Data", "equipment_mod_ranges.json")
+                };
+
+                foreach (var path in candidatePaths)
+                {
+                    if (!System.IO.File.Exists(path)) continue;
+                    if (new System.IO.FileInfo(path).Length > 32 * 1024 * 1024)
+                        throw new System.IO.InvalidDataException("Equipment database exceeds the size limit.");
+
+                    var root = Newtonsoft.Json.Linq.JToken.Parse(System.IO.File.ReadAllText(path));
+                    Newtonsoft.Json.Linq.JToken rows;
+                    if (root is Newtonsoft.Json.Linq.JObject document)
+                    {
+                        if ((int?)document["SchemaVersion"] != 1)
+                            throw new System.IO.InvalidDataException("Unsupported equipment database schema.");
+                        EquipmentSourceVersion = (string)document["SourceVersion"] ?? string.Empty;
+                        rows = document["Mods"];
+                    }
+                    else
+                    {
+                        rows = root;
+                    }
+
+                    if (rows is not Newtonsoft.Json.Linq.JArray array || array.Count > 100000)
+                        throw new System.IO.InvalidDataException("Equipment database has no valid Mods array.");
+                    var records = array.ToObject<List<EquipmentMod>>() ?? new List<EquipmentMod>();
+                    var result = new List<EquipmentMod>();
+                    var ids = new HashSet<string>(System.StringComparer.Ordinal);
+                    var mappings = new HashSet<string>(System.StringComparer.Ordinal);
+                    int rejected = 0;
+                    for (int index = 0; index < records.Count; index++)
+                    {
+                        var mod = records[index];
+                        if (mod == null || string.IsNullOrWhiteSpace(mod.Id) ||
+                            string.IsNullOrWhiteSpace(mod.Category) || !ids.Add(mod.Id) ||
+                            !mappings.Add(mod.Category + "\0" + mod.GameModId))
+                        {
+                            rejected++;
+                            continue;
+                        }
+
+                        mod.RawRollRanges ??= new List<EquipmentRollRange>();
+                        mod.ItemClasses ??= new List<string>();
+                        bool validRaw = array[index]["RawRollRanges"] is Newtonsoft.Json.Linq.JArray;
+                        foreach (var range in mod.RawRollRanges)
+                        {
+                            if (range == null || string.IsNullOrWhiteSpace(range.StatId) || range.Min > range.Max)
+                            {
+                                validRaw = false;
+                                break;
+                            }
+                        }
+
+                        if (string.IsNullOrWhiteSpace(mod.GameModId) || !validRaw ||
+                            (mod.Type != "Prefix" && mod.Type != "Suffix"))
+                        {
+                            mod.MatchStatus = "Unverified";
+                            mod.MatchIssue = "Missing exact Mod ID, affix type, or raw stat ranges.";
+                        }
+
+                        result.Add(mod);
+                    }
+
+                    if (result.Count == 0)
+                        throw new System.IO.InvalidDataException("Equipment database contains no usable records.");
+                    if (rejected > 0)
+                        EquipmentLoadError = $"Equipment database skipped {rejected} invalid or duplicate records.";
+                    return result;
+                }
+
+                EquipmentLoadError = "equipment_mod_ranges.json was not found.";
+            }
+            catch (System.Exception exception)
+            {
+                EquipmentLoadError = exception.Message;
+            }
+
+            return new List<EquipmentMod>();
+        }
+
         private static List<JewelMod> LoadJewelMods()
         {
             try
