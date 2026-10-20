@@ -66,6 +66,10 @@ namespace StashUtility
         private readonly Dictionary<string, string> jewelCategorySearchTerms = new();
         private readonly Dictionary<string, int> jewelCategorySelectedIndices = new();
 
+        // Equipment UI State
+        private readonly Dictionary<string, string> equipmentCategorySearchTerms = new();
+        private readonly Dictionary<string, int> equipmentCategorySelectedIndices = new();
+
         // Debug UI Path Explorer State
         private readonly List<int> currentDebugPath = new();
         private string explorerRootAddressStr = string.Empty;
@@ -811,18 +815,43 @@ namespace StashUtility
                             {
                                 var profile = Settings.TabletProfiles[tabletType];
 
-                                Func<Models.TabletMod, bool> filterFunc = tabletType switch
+                                Func<Models.TabletMod, bool> filterFunc;
+                                if (tabletType == "Breach Tablet")
                                 {
-                                    "Breach Tablet" => m => m.Category == "General" || m.Category == "Breach",
-                                    "Expedition Tablet" => m => m.Category == "General" || m.Category == "Expedition",
-                                    "Delirium Tablet" => m => m.Category == "General" || m.Category == "Delirium",
-                                    "Ritual Tablet" => m => m.Category == "General" || m.Category == "Ritual",
-                                    "Abyss Tablet" => m => m.Category == "General" || m.Category == "Abyss",
-                                    "Temple Tablet" => m => m.Category == "General" || m.Category == "Temple" || m.Category == "Incursion",
-                                    "Overseer Tablet" => m => m.Category == "General" || m.Category == "Overseer",
-                                    "Irradiated Tablet" => m => m.Category == "General" || m.Category == "Irradiated",
-                                    _ => m => m.Category == "General"
-                                };
+                                    filterFunc = m => IsGeneralMod(m) || m.Id.Contains("Breach", StringComparison.OrdinalIgnoreCase);
+                                }
+                                else if (tabletType == "Expedition Tablet")
+                                {
+                                    filterFunc = m => IsGeneralMod(m) || m.Id.Contains("Expedition", StringComparison.OrdinalIgnoreCase);
+                                }
+                                else if (tabletType == "Delirium Tablet")
+                                {
+                                    filterFunc = m => IsGeneralMod(m) || m.Id.Contains("Delirium", StringComparison.OrdinalIgnoreCase);
+                                }
+                                else if (tabletType == "Ritual Tablet")
+                                {
+                                    filterFunc = m => IsGeneralMod(m) || m.Id.Contains("Ritual", StringComparison.OrdinalIgnoreCase);
+                                }
+                                else if (tabletType == "Abyss Tablet")
+                                {
+                                    filterFunc = m => IsGeneralMod(m) || m.Id.Contains("Abyss", StringComparison.OrdinalIgnoreCase);
+                                }
+                                else if (tabletType == "Temple Tablet")
+                                {
+                                    filterFunc = m => IsGeneralMod(m) || m.Id.Contains("Incursion", StringComparison.OrdinalIgnoreCase);
+                                }
+                                else if (tabletType == "Overseer Tablet")
+                                {
+                                    filterFunc = m => IsGeneralMod(m) || m.Id.Contains("Boss", StringComparison.OrdinalIgnoreCase);
+                                }
+                                else if (tabletType == "Irradiated Tablet")
+                                {
+                                    filterFunc = m => IsGeneralMod(m) || m.Id.Contains("Irradiated", StringComparison.OrdinalIgnoreCase);
+                                }
+                                else
+                                {
+                                    filterFunc = m => IsGeneralMod(m);
+                                }
 
                                 var tabMods = Data.ModDatabase.AllTabletMods.Where(filterFunc).ToList();
 
@@ -1011,6 +1040,221 @@ namespace StashUtility
                                                     if (ImGui.Selectable(matchingMods[i].Name, isSel))
                                                     {
                                                         jewelCategorySelectedIndices[searchKey] = i;
+                                                    }
+                                                    if (isSel) ImGui.SetItemDefaultFocus();
+                                                }
+                                                ImGui.EndCombo();
+                                            }
+
+                                            ImGui.SameLine();
+                                            var targetMod = matchingMods[selIdx];
+                                            if (ImGui.Button($"Add Mod##add_mod_{searchKey}"))
+                                            {
+                                                if (!group.ModPatternIds.Contains(targetMod.Id))
+                                                {
+                                                    group.ModPatternIds.Add(targetMod.Id);
+                                                    SaveSettings();
+                                                }
+                                            }
+                                        }
+
+                                        // Active Mods List inside Group
+                                        ImGui.TextColored(new Vector4(0.4f, 0.8f, 1f, 1f), $"Active Group Modifiers ({group.ModPatternIds.Count}):");
+                                        ImGui.BeginChild($"ActiveGroupMods_{searchKey}", new Vector2(0, 160), ImGuiChildFlags.Borders);
+
+                                        var activeGroupMods = allCatMods.Where(m => group.ModPatternIds.Contains(m.Id)).ToList();
+                                        if (activeGroupMods.Count == 0)
+                                        {
+                                            ImGui.TextDisabled("No modifiers added to this group profile yet.");
+                                        }
+                                        else
+                                        {
+                                            foreach (var mod in activeGroupMods)
+                                            {
+                                                ImGui.PushID($"GrpMod_{searchKey}_{mod.Id}");
+                                                if (ImGui.Button(" X "))
+                                                {
+                                                    group.ModPatternIds.Remove(mod.Id);
+                                                    SaveSettings();
+                                                }
+                                                ImGui.SameLine();
+                                                ImGui.TextUnformatted(mod.Name);
+
+                                                if (mod.MinRoll != mod.MaxRoll)
+                                                {
+                                                    ImGui.Indent(25f);
+                                                    if (!group.ModRequiredMinRolls.ContainsKey(mod.Id))
+                                                        group.ModRequiredMinRolls[mod.Id] = mod.MinRoll;
+
+                                                    float reqRoll = group.ModRequiredMinRolls[mod.Id];
+                                                    int intRoll = (int)reqRoll;
+                                                    if (ImGui.SliderInt($"Req. Min Roll##min_{mod.Id}", ref intRoll, (int)mod.MinRoll, (int)mod.MaxRoll))
+                                                    {
+                                                        group.ModRequiredMinRolls[mod.Id] = (float)intRoll;
+                                                        SaveSettings();
+                                                    }
+                                                    ImGui.Unindent(25f);
+                                                }
+                                                ImGui.PopID();
+                                                ImGui.Separator();
+                                            }
+                                        }
+                                        ImGui.EndChild();
+                                        ImGui.Unindent(10f);
+                                    }
+                                    ImGui.PopID();
+                                    ImGui.Spacing();
+                                }
+
+                                ImGui.EndTabItem();
+                            }
+                        }
+                        ImGui.EndTabBar();
+                    }
+                }
+
+                ImGui.Unindent();
+            }
+
+            ImGui.Checkbox(PluginText.T("stashutility.enable_equipment_manager", "Enable Equipment Manager"), ref Settings.EnableEquipmentManager);
+            ImGuiHelper.ToolTip(PluginText.T("stashutility.enable_equipment_manager_tooltip", "Enables or disables highlighting of Equipment in stash tabs."));
+            if (Settings.EnableEquipmentManager)
+            {
+                ImGui.Indent();
+                if (ImGui.CollapsingHeader(PluginText.T("stashutility.equipment_mod_manager_header", "Equipment Mod Filter Manager")))
+                {
+                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_equipment_great", "Filter Equipment Great Status"), ref Settings.FilterEquipmentGreat)) SaveSettings();
+                    if (Settings.FilterEquipmentGreat)
+                    {
+                        ImGui.SameLine();
+                        ImGui.SetCursorPosX(300f);
+                        ImGui.SetNextItemWidth(150f);
+                        if (ImGui.SliderInt(PluginText.T("stashutility.min_good_equipment_mods", "Min Good Equipment Mods Count"), ref Settings.MinEquipmentGoodMods, 1, 4)) SaveSettings();
+                    }
+                    ImGui.Spacing();
+
+                    if (ImGui.BeginTabBar("EquipmentCategoryTabs"))
+                    {
+                        var categories = new Dictionary<string, Func<Models.EquipmentMod, bool>>
+                        {
+                            { "Weapons",     m => m.Category == "Weapons" },
+                            { "Helmets",     m => m.Category == "Helmets" },
+                            { "Body Armour", m => m.Category == "Body Armour" },
+                            { "Gloves",      m => m.Category == "Gloves" },
+                            { "Boots",       m => m.Category == "Boots" },
+                            { "Rings",       m => m.Category == "Rings" },
+                            { "Amulets",     m => m.Category == "Amulets" },
+                            { "Belts",       m => m.Category == "Belts" },
+                            { "Shields",     m => m.Category == "Shields" },
+                            { "Quivers",     m => m.Category == "Quivers" }
+                        };
+
+                        foreach (var kvp in categories)
+                        {
+                            if (ImGui.BeginTabItem(kvp.Key))
+                            {
+                                string cat = kvp.Key;
+                                var allCatMods = Data.ModDatabase.AllEquipmentMods.Where(kvp.Value).ToList();
+
+                                if (!Settings.EquipmentCategoryGroups.TryGetValue(cat, out var groupList) || groupList == null)
+                                {
+                                    groupList = new List<StashUtility.Models.EquipmentGroup>();
+                                    Settings.EquipmentCategoryGroups[cat] = groupList;
+                                }
+
+                                // Migration / Default initialization
+                                if (groupList.Count == 0)
+                                {
+                                    var defGroup = new StashUtility.Models.EquipmentGroup { Name = "Default Profile", MinMatchCount = Settings.MinEquipmentGoodModsToHighlight };
+                                    var catModIds = allCatMods.Select(m => m.Id).ToHashSet();
+                                    defGroup.ModPatternIds = Settings.EquipmentGoodModPatterns.Where(id => catModIds.Contains(id)).ToList();
+                                    foreach (var id in defGroup.ModPatternIds)
+                                    {
+                                        if (Settings.EquipmentModRequiredMinRolls.TryGetValue(id, out float roll))
+                                            defGroup.ModRequiredMinRolls[id] = roll;
+                                    }
+                                    groupList.Add(defGroup);
+                                    SaveSettings();
+                                }
+
+                                if (ImGui.Button($"+ Add New Profile Group##add_group_{cat}"))
+                                {
+                                    groupList.Add(new StashUtility.Models.EquipmentGroup { Name = $"Profile Group {groupList.Count + 1}", MinMatchCount = 2 });
+                                    SaveSettings();
+                                }
+                                ImGui.Separator();
+
+                                for (int gIdx = 0; gIdx < groupList.Count; gIdx++)
+                                {
+                                    var group = groupList[gIdx];
+                                    ImGui.PushID($"Group_{cat}_{group.Id}");
+
+                                    string groupHeaderName = string.IsNullOrWhiteSpace(group.Name) ? $"Group {gIdx + 1}" : group.Name;
+                                    if (ImGui.CollapsingHeader($"{groupHeaderName} (Min Match: {group.MinMatchCount})##header_{group.Id}", ImGuiTreeNodeFlags.DefaultOpen))
+                                    {
+                                        ImGui.Indent(10f);
+
+                                        string nameBuf = group.Name ?? string.Empty;
+                                        ImGui.SetNextItemWidth(180f);
+                                        if (ImGui.InputText($"Group Name##name_{group.Id}", ref nameBuf, 50))
+                                        {
+                                            group.Name = nameBuf;
+                                            SaveSettings();
+                                        }
+
+                                        ImGui.SameLine();
+                                        ImGui.SetNextItemWidth(140f);
+                                        int minMatch = group.MinMatchCount;
+                                        if (ImGui.SliderInt($"Min Match##min_{group.Id}", ref minMatch, 1, 6))
+                                        {
+                                            group.MinMatchCount = minMatch;
+                                            SaveSettings();
+                                        }
+
+                                        if (groupList.Count > 1)
+                                        {
+                                            ImGui.SameLine();
+                                            if (ImGui.Button($"Delete Group##del_{group.Id}"))
+                                            {
+                                                groupList.RemoveAt(gIdx);
+                                                SaveSettings();
+                                                ImGui.Unindent(10f);
+                                                ImGui.PopID();
+                                                break;
+                                            }
+                                        }
+
+                                        // Search & Add Mod inside this group
+                                        string searchKey = $"{cat}_{group.Id}";
+                                        if (!equipmentCategorySearchTerms.ContainsKey(searchKey)) equipmentCategorySearchTerms[searchKey] = string.Empty;
+                                        if (!equipmentCategorySelectedIndices.ContainsKey(searchKey)) equipmentCategorySelectedIndices[searchKey] = 0;
+
+                                        string filter = equipmentCategorySearchTerms[searchKey];
+                                        var matchingMods = string.IsNullOrWhiteSpace(filter)
+                                            ? allCatMods
+                                            : allCatMods.Where(m => m.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) || m.Id.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
+
+                                        ImGui.SetNextItemWidth(220f);
+                                        if (ImGui.InputText($"Search Mod##search_{searchKey}", ref filter, 100))
+                                        {
+                                            equipmentCategorySearchTerms[searchKey] = filter;
+                                            equipmentCategorySelectedIndices[searchKey] = 0;
+                                        }
+
+                                        if (matchingMods.Count > 0)
+                                        {
+                                            int selIdx = Math.Clamp(equipmentCategorySelectedIndices[searchKey], 0, matchingMods.Count - 1);
+                                            string comboLabel = matchingMods[selIdx].Name;
+
+                                            ImGui.SetNextItemWidth(450f);
+                                            if (ImGui.BeginCombo($"Select Mod##combo_{searchKey}", comboLabel))
+                                            {
+                                                for (int i = 0; i < matchingMods.Count; i++)
+                                                {
+                                                    bool isSel = (i == selIdx);
+                                                    if (ImGui.Selectable(matchingMods[i].Name, isSel))
+                                                    {
+                                                        equipmentCategorySelectedIndices[searchKey] = i;
                                                     }
                                                     if (isSel) ImGui.SetItemDefaultFocus();
                                                 }
@@ -2074,7 +2318,7 @@ namespace StashUtility
 
             // Category mismatch guards: prevent matching e.g. "Spell Damage" to "Critical Spell Damage"
             bool gameHasCrit = cleanGame.Contains("crit");
-            bool defHasCrit = gameModId.Contains("crit") || defName.Contains("critical");
+            bool defHasCrit = gameModId.Contains("crit") || defName.Contains("crit");
             if (defHasCrit != gameHasCrit) return false;
 
             bool gameHasSpeed = cleanGame.Contains("speed");
@@ -2139,22 +2383,18 @@ namespace StashUtility
             string coreGameMod = cleanGame.StartsWith("jewel") ? cleanGame.Substring(5) : cleanGame;
             string coreGameModId = gameModId.StartsWith("jewel") ? gameModId.Substring(5) : gameModId;
 
-            // Normalize multiplier / damage / bonus synonyms for critical damage matching
-            string normCoreGameMod = coreGameMod.Replace("multiplier", "damage").Replace("multi", "damage");
-            string normCoreGameModId = coreGameModId.Replace("multiplier", "damage").Replace("multi", "damage");
-
-            if (!string.IsNullOrEmpty(normCoreGameModId) && normCoreGameModId.Length > 2)
+            if (!string.IsNullOrEmpty(coreGameModId) && coreGameModId.Length > 2)
             {
-                if (normCoreGameMod.Contains(normCoreGameModId, StringComparison.OrdinalIgnoreCase) ||
-                    normCoreGameModId.Contains(normCoreGameMod, StringComparison.OrdinalIgnoreCase))
+                if (coreGameMod.Contains(coreGameModId, StringComparison.OrdinalIgnoreCase) ||
+                    coreGameModId.Contains(coreGameMod, StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
                 }
             }
 
             // 5. Match core game mod phrase against def.Name description
-            string cleanDefNameAlpha = System.Text.RegularExpressions.Regex.Replace(defName, @"[^a-z0-9]", "").Replace("multiplier", "damage").Replace("multi", "damage");
-            if (normCoreGameMod.Length > 3 && cleanDefNameAlpha.Contains(normCoreGameMod, StringComparison.OrdinalIgnoreCase))
+            string cleanDefNameAlpha = System.Text.RegularExpressions.Regex.Replace(defName, @"[^a-z0-9]", "");
+            if (coreGameMod.Length > 3 && cleanDefNameAlpha.Contains(coreGameMod, StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
@@ -2350,8 +2590,7 @@ namespace StashUtility
                         {
                             var def = Data.ModDatabase.AllTabletMods
                                 .OrderByDescending(d => d.Id.Length)
-                                .FirstOrDefault(d => mod.name.Contains(d.Id, StringComparison.OrdinalIgnoreCase)
-                                    || (d.Id.StartsWith("Tower", StringComparison.OrdinalIgnoreCase) && mod.name.Contains(d.Id.Substring(5), StringComparison.OrdinalIgnoreCase)));
+                                .FirstOrDefault(d => mod.name.Contains(d.Id, StringComparison.OrdinalIgnoreCase));
 
                             if (def != null)
                             {
@@ -2516,88 +2755,29 @@ namespace StashUtility
                 }
             }
 
-            // Check whether a value satisfies the enabled minimum and maximum bounds.
-            static bool MatchRange(
-                int value,
-                bool useMin, int min,
-                bool useMax, int max)
-            {
-                return (useMin || useMax)
-                    && (!useMin || value >= min)
-                    && (!useMax || value <= max);
-            }
-
-            // Normal filtering uses OR logic across different attributes.
-            bool normalMatch = false;
-
+            bool passesNumericalFilters = true;
             if (isWaystone)
             {
-                normalMatch =
-                    MatchRange(
-                        sumRarity,
-                        Settings.FilterMinItemRarity, Settings.MinItemRarity,
-                        Settings.FilterMaxItemRarity, Settings.MaxItemRarity)
-
-                    || MatchRange(
-                        sumPackSize,
-                        Settings.FilterMinPackSize, Settings.MinPackSize,
-                        Settings.FilterMaxPackSize, Settings.MaxPackSize)
-
-                    || MatchRange(
-                        sumMonstRarity,
-                        Settings.FilterMinMonsterRarity, Settings.MinMonsterRarity,
-                        Settings.FilterMaxMonsterRarity, Settings.MaxMonsterRarity)
-
-                    || MatchRange(
-                        sumEffect,
-                        Settings.FilterMinMonsterEffectiveness,
-                        Settings.MinMonsterEffectiveness,
-                        Settings.FilterMaxMonsterEffectiveness,
-                        Settings.MaxMonsterEffectiveness)
-
-                    || MatchRange(
-                        sumDropChance,
-                        Settings.FilterMinWaystoneDropChance,
-                        Settings.MinWaystoneDropChance,
-                        Settings.FilterMaxWaystoneDropChance,
-                        Settings.MaxWaystoneDropChance)
-
-                    || MatchRange(
-                        explicitModsCount,
-                        Settings.FilterMinExplicitMods, Settings.MinExplicitMods,
-                        Settings.FilterMaxExplicitMods, Settings.MaxExplicitMods);
-
-                // Revive count is a shared constraint for both normal and great filters.
-                if (Settings.FilterMaxRevives &&
-                    revives > Settings.MaxRevivesAvailable)
-                {
-                    normalMatch = false;
-                    isGreat = false;
-                }
+                if (Settings.FilterMaxRevives && revives > Settings.MaxRevivesAvailable) passesNumericalFilters = false;
+                if (Settings.FilterMinItemRarity && sumRarity < Settings.MinItemRarity) passesNumericalFilters = false;
+                if (Settings.FilterMaxItemRarity && sumRarity > Settings.MaxItemRarity) passesNumericalFilters = false;
+                if (Settings.FilterMinPackSize && sumPackSize < Settings.MinPackSize) passesNumericalFilters = false;
+                if (Settings.FilterMaxPackSize && sumPackSize > Settings.MaxPackSize) passesNumericalFilters = false;
+                if (Settings.FilterMinMonsterRarity && sumMonstRarity < Settings.MinMonsterRarity) passesNumericalFilters = false;
+                if (Settings.FilterMaxMonsterRarity && sumMonstRarity > Settings.MaxMonsterRarity) passesNumericalFilters = false;
+                if (Settings.FilterMinMonsterEffectiveness && sumEffect < Settings.MinMonsterEffectiveness) passesNumericalFilters = false;
+                if (Settings.FilterMaxMonsterEffectiveness && sumEffect > Settings.MaxMonsterEffectiveness) passesNumericalFilters = false;
+                if (Settings.FilterMinWaystoneDropChance && sumDropChance < Settings.MinWaystoneDropChance) passesNumericalFilters = false;
+                if (Settings.FilterMaxWaystoneDropChance && sumDropChance > Settings.MaxWaystoneDropChance) passesNumericalFilters = false;
+                if (Settings.FilterMinExplicitMods && explicitModsCount < Settings.MinExplicitMods) passesNumericalFilters = false;
+                if (Settings.FilterMaxExplicitMods && explicitModsCount > Settings.MaxExplicitMods) passesNumericalFilters = false;
             }
 
-            // Evaluate normal and great filters independently
-            if (isWaystone)
-            {
-                bool numericMatched = normalMatch || isGreat;
+            if ((isTablet || isJewel) && !isBad && !isGood) return;
 
-                // Preserve optional bad-mod filtering.
-                if (Settings.FilterBadModsOnlyOnHighlighted &&
-                    isBad && !numericMatched)
-                {
-                    isBad = false;
-                }
+            if (isWaystone && Settings.FilterBadModsOnlyOnHighlighted && !passesNumericalFilters) return;
 
-                // Skip rendering when neither numeric nor mod-based criteria match.
-                if (!numericMatched && !isGood && !isBad)
-                {
-                    return;
-                }
-            }
-            else if ((isTablet || isJewel) && !isBad && !isGood)
-            {
-                return;
-            }
+            if (!isBad && !passesNumericalFilters) return;
 
             float scale = size.X / 52.0f;
             float margin = Settings.BorderMargin * scale; // Adaptive margin for 4K scaling where bounding boxes overlap
@@ -2610,11 +2790,7 @@ namespace StashUtility
                 return;
             }
 
-            bool shouldDrawModBorder = isWaystone
-                ? (normalMatch || isGood || isBad)
-                : (isBad || isGood);
-
-            if (showModBorder && shouldDrawModBorder)
+            if (showModBorder && (isBad || isGood || passesNumericalFilters))
             {
                 Vector4 borderCol = isJewel
                     ? (isBad ? Settings.JewelBadColor : Settings.JewelGoodColor)
@@ -3054,8 +3230,8 @@ namespace StashUtility
                     var genericMethod = this.handleObj.GetType()
                         .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
                         .First(m => m.Name == "TryReadMemory" && m.IsGenericMethod && m.GetParameters().Length == 2);
-                    method = genericMethod.MakeGenericMethod(typeof(T));
-                    tryReadMemoryMethods[typeof(T)] = method;
+                    genericMethod = genericMethod.MakeGenericMethod(typeof(T));
+                    tryReadMemoryMethods[typeof(T)] = genericMethod;
                 }
 
                 var args = new object[] { address, default(T) };

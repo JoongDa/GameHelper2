@@ -128,6 +128,19 @@ namespace StashUtility
         public List<string> JewelBadModPatterns = new();
         public Dictionary<string, float> JewelModRequiredMinRolls = new();
         public Dictionary<string, List<StashUtility.Models.JewelGroup>> JewelCategoryGroups = new();
+        
+        // Equipments Manager
+        public bool EnableEquipmentManager = true;
+        public int MinEquipmentGoodModsToHighlight = 1;
+        public bool FilterEquipmentGreat = false;
+        public int MinEquipmentGoodMods = 2;
+        public Vector4 EquipmentGoodColor = new(0.0f, 1.0f, 0.4f, 1.0f);   // Bright Emerald Green
+        public Vector4 EquipmentBadColor = new(1.0f, 0.2f, 0.2f, 1.0f);    // Bright Red
+        public Vector4 EquipmentColorGreat = new(1.0f, 0.84f, 0.0f, 1.0f); // Gold
+        public List<string> EquipmentGoodModPatterns = new();
+        public List<string> EquipmentBadModPatterns = new();
+        public Dictionary<string, float> EquipmentModRequiredMinRolls = new();
+        public Dictionary<string, List<StashUtility.Models.EquipmentGroup>> EquipmentCategoryGroups = new();
 
         // Debug Probe Mode
         public bool EnableDebugProbe = false;
