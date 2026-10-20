@@ -3288,8 +3288,8 @@ namespace StashUtility
                     var genericMethod = this.handleObj.GetType()
                         .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
                         .First(m => m.Name == "TryReadMemory" && m.IsGenericMethod && m.GetParameters().Length == 2);
-                    genericMethod = genericMethod.MakeGenericMethod(typeof(T));
-                    tryReadMemoryMethods[typeof(T)] = genericMethod;
+                    method = genericMethod.MakeGenericMethod(typeof(T));
+                    tryReadMemoryMethods[typeof(T)] = method;
                 }
 
                 var args = new object[] { address, default(T) };
