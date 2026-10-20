@@ -1,0 +1,12 @@
+{
+  "plugin.description": "在仪式灵体周围绘制有效范围圆圈，并根据玩家是否进入范围切换颜色。",
+  "settings.enable_overlay": "显示仪式灵体范围圆圈",
+  "settings.hide_unfocused_or_paused": "游戏失去焦点或暂停时隐藏",
+  "settings.inside_color": "进入范围时的颜色",
+  "settings.offset_x": "圆心 X 偏移",
+  "settings.offset_y": "圆心 Y 偏移",
+  "settings.offset_z": "圆心高度偏移",
+  "settings.outside_color": "范围外的颜色",
+  "settings.radius": "圆圈半径（米）",
+  "settings.thickness": "圆圈线宽"
+}
