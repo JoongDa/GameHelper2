@@ -105,6 +105,14 @@ namespace StashUtility
                 }
             }
 
+            if (!Settings.EquipmentHighlightSettingsInitialized)
+            {
+                // Replace the previously unexposed default once, preserving other saved colors.
+                if (Settings.EquipmentGoodColor == new Vector4(0.0f, 1.0f, 0.4f, 1.0f))
+                    Settings.EquipmentGoodColor = new Vector4(1.0f, 0.84f, 0.0f, 1.0f);
+                Settings.EquipmentHighlightSettingsInitialized = true;
+            }
+
             if (Settings.ScanEndOffset < 0x500)
             {
                 Settings.ScanEndOffset = 0x600;
@@ -1313,6 +1321,7 @@ namespace StashUtility
             {
                 ImGui.Checkbox(PluginText.T("stashutility.show_waystone_mod_border", "Show Waystone Mod Highlight Border"), ref Settings.ShowModBorder);
                 ImGui.Checkbox(PluginText.T("stashutility.show_tablet_mod_border", "Show Tablet Mod Highlight Border"), ref Settings.ShowTabletModBorder);
+                if (ImGui.Checkbox(PluginText.T("stashutility.show_equipment_mod_border", "Show Equipment Mod Highlight Border"), ref Settings.ShowEquipmentModBorder)) SaveSettings();
                 ImGui.Checkbox(PluginText.T("stashutility.show_rarity_border", "Show Rarity Corner Indicator"), ref Settings.ShowRarityBorder);
                 if (Settings.ShowRarityBorder)
                 {
@@ -1348,6 +1357,7 @@ namespace StashUtility
                 if (ImGui.ColorEdit4(PluginText.T("stashutility.tablet_bad_color", "Tablet Bad Highlight Color"), ref Settings.TabletBadColor)) SaveSettings();
                 if (ImGui.ColorEdit4(PluginText.T("stashutility.jewel_good_color", "Jewel Good Highlight Color"), ref Settings.JewelGoodColor)) SaveSettings();
                 if (ImGui.ColorEdit4(PluginText.T("stashutility.jewel_bad_color", "Jewel Bad Highlight Color"), ref Settings.JewelBadColor)) SaveSettings();
+                if (ImGui.ColorEdit4(PluginText.T("stashutility.equipment_good_color", "Equipment Highlight Color"), ref Settings.EquipmentGoodColor)) SaveSettings();
                 if (ImGui.ColorEdit4(PluginText.T("stashutility.waystone_great_color", "Waystone GREAT Arrow Color"), ref Settings.ColorGreat)) SaveSettings();
                 if (ImGui.ColorEdit4(PluginText.T("stashutility.tablet_great_color", "Tablet GREAT Arrow Color"), ref Settings.TabletColorGreat)) SaveSettings();
                 if (ImGui.ColorEdit4(PluginText.T("stashutility.jewel_great_color", "Jewel GREAT Arrow Color"), ref Settings.JewelColorGreat)) SaveSettings();

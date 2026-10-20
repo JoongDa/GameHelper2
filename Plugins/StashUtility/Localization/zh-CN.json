@@ -1,4 +1,6 @@
 {
+  "stashutility.show_equipment_mod_border": "显示装备词缀高亮边框",
+  "stashutility.equipment_good_color": "装备高亮颜色",
   "stashutility.equipment.average_minimum": "最低平均附加伤害",
   "stashutility.equipment.average_range": "平均附加伤害可设为 {0} 至 {1}。比较（实际伤害下限 + 实际伤害上限）÷ 2，两个 Raw 数值均须读取成功。",
   "stashutility.equipment.minimum_label": "最低 Roll",

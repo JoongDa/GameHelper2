@@ -93,6 +93,7 @@ namespace StashUtility
         public bool ShowRarityBorder = true;
         public bool ShowModBorder = true;
         public bool ShowTabletModBorder = true;
+        public bool ShowEquipmentModBorder = true;
         public bool HideNormalWaystones = false;
 
         public int FrameStyleBad = 0;   // 0: Solid, 1: Dashed, 2: Dotted
@@ -134,7 +135,8 @@ namespace StashUtility
         public int MinEquipmentGoodModsToHighlight = 1;
         public bool FilterEquipmentGreat = false;
         public int MinEquipmentGoodMods = 2;
-        public Vector4 EquipmentGoodColor = new(0.0f, 1.0f, 0.4f, 1.0f);   // Bright Emerald Green
+        public Vector4 EquipmentGoodColor = new(1.0f, 0.84f, 0.0f, 1.0f); // Gold
+        public bool EquipmentHighlightSettingsInitialized = false;
         public Vector4 EquipmentBadColor = new(1.0f, 0.2f, 0.2f, 1.0f);    // Bright Red
         public Vector4 EquipmentColorGreat = new(1.0f, 0.84f, 0.0f, 1.0f); // Gold
         public List<string> EquipmentGoodModPatterns = new();

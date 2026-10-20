@@ -1,4 +1,6 @@
 {
+  "stashutility.show_equipment_mod_border": "Show Equipment Mod Highlight Border",
+  "stashutility.equipment_good_color": "Equipment Highlight Color",
   "stashutility.equipment.average_minimum": "Min. Average Added Damage",
   "stashutility.equipment.average_range": "Average added damage: {0} to {1}. Compares (actual minimum + actual maximum) / 2. Both Raw values are required.",
   "stashutility.equipment.minimum_label": "Req. Min Roll",
