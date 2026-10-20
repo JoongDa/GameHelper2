@@ -1,4 +1,13 @@
 {
+  "stashutility.equipment.average_minimum": "Min. Average Added Damage",
+  "stashutility.equipment.average_range": "Average added damage: {0} to {1}. Compares (actual minimum + actual maximum) / 2. Both Raw values are required.",
+  "stashutility.equipment.minimum_label": "Req. Min Roll",
+  "stashutility.equipment.saved_scope": "This saved rule keeps its original variants. Remove and add it again to include all variants.",
+  "stashutility.equipment.mixed_minimum": "Mixed",
+  "stashutility.equipment.minimum_range": "Minimum Raw Roll: {0} to {1}. Actual Roll must be at least the selected value.",
+  "stashutility.equipment.mixed_hint": "Previous per-variant conditions are retained. Moving this slider replaces them with one shared minimum.",
+  "stashutility.equipment.multiple_raw": "Multiple or unknown Raw values: no combined slider. Existing conditions are retained.",
+  "stashutility.equipment.remove": "Remove",
   "plugin.description": "Utility for managing and filtering waystones and precursor/breach tablets in your stash.",
   "stashutility.show_in_bg": "Show Overlay When Game in Background",
   "stashutility.show_in_bg_tooltip": "If checked, the waystone highlights will remain visible even when the game window is in the background.",

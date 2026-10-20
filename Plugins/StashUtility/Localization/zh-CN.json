@@ -1,4 +1,13 @@
 {
+  "stashutility.equipment.average_minimum": "最低平均附加伤害",
+  "stashutility.equipment.average_range": "平均附加伤害可设为 {0} 至 {1}。比较（实际伤害下限 + 实际伤害上限）÷ 2，两个 Raw 数值均须读取成功。",
+  "stashutility.equipment.minimum_label": "最低 Roll",
+  "stashutility.equipment.saved_scope": "此旧规则保留原先选中的变体。移除后重新添加可包含全部变体。",
+  "stashutility.equipment.mixed_minimum": "旧条件不同",
+  "stashutility.equipment.minimum_range": "最低 Raw Roll 可设为 {0} 至 {1}，实际值须不小于选定值。",
+  "stashutility.equipment.mixed_hint": "原有各变体条件保持不变。拖动滑块后，将统一为一个最低值。",
+  "stashutility.equipment.multiple_raw": "存在多个或未知 Raw 数值，暂不提供合并滑块；已有条件保持不变。",
+  "stashutility.equipment.remove": "移除",
   "plugin.description": "用于管理和筛选仓库中的地图石、先驱者碑牌和裂隙碑牌。",
   "stashutility.show_in_bg": "游戏在后台时仍显示叠加层",
   "stashutility.show_in_bg_tooltip": "启用后，即使游戏窗口处于后台，也会继续显示地图石高亮。",

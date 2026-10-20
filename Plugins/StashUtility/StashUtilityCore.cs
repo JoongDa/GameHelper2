@@ -1155,6 +1155,7 @@ namespace StashUtility
                             {
                                 string cat = kvp.Key;
                                 var allCatMods = Data.ModDatabase.AllEquipmentMods.Where(kvp.Value).ToList();
+                                var allCatOptions = Data.ModDatabase.AllEquipmentModOptions.Where(option => kvp.Value(option.Mods[0])).ToList();
 
                                 if (!Settings.EquipmentCategoryGroups.TryGetValue(cat, out var groupList) || groupList == null)
                                 {
@@ -1231,8 +1232,9 @@ namespace StashUtility
 
                                         string filter = equipmentCategorySearchTerms[searchKey];
                                         var matchingMods = string.IsNullOrWhiteSpace(filter)
-                                            ? allCatMods
-                                            : allCatMods.Where(m => m.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) || m.Id.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
+                                            ? allCatOptions
+                                            : allCatOptions.Where(option => option.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                                                option.Mods.Any(mod => mod.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) || mod.Id.Contains(filter, StringComparison.OrdinalIgnoreCase))).ToList();
 
                                         ImGui.SetNextItemWidth(220f);
                                         if (ImGui.InputText($"Search Mod##search_{searchKey}", ref filter, 100))
@@ -1252,7 +1254,7 @@ namespace StashUtility
                                                 for (int i = 0; i < matchingMods.Count; i++)
                                                 {
                                                     bool isSel = (i == selIdx);
-                                                    if (ImGui.Selectable(matchingMods[i].Name, isSel))
+                                                    if (ImGui.Selectable(matchingMods[i].Name + "##" + matchingMods[i].Id, isSel))
                                                     {
                                                         equipmentCategorySelectedIndices[searchKey] = i;
                                                     }
@@ -1263,55 +1265,31 @@ namespace StashUtility
 
                                             ImGui.SameLine();
                                             var targetMod = matchingMods[selIdx];
+                                            ImGui.BeginDisabled(targetMod.Mods.Any(mod => group.ModPatternIds.Contains(mod.Id)));
                                             if (ImGui.Button($"Add Mod##add_mod_{searchKey}"))
                                             {
-                                                if (!group.ModPatternIds.Contains(targetMod.Id))
+                                                foreach (var mod in targetMod.Mods)
                                                 {
-                                                    group.ModPatternIds.Add(targetMod.Id);
-                                                    SaveSettings();
+                                                    group.ModPatternIds.Add(mod.Id);
                                                 }
+                                                SaveSettings();
                                             }
+                                            ImGui.EndDisabled();
                                         }
 
                                         // Active Mods List inside Group
-                                        ImGui.TextColored(new Vector4(0.4f, 0.8f, 1f, 1f), $"Active Group Modifiers ({group.ModPatternIds.Count}):");
+                                        var activeGroupMods = allCatOptions.Where(option => option.Mods.Any(mod => group.ModPatternIds.Contains(mod.Id))).ToList();
+                                        ImGui.TextColored(new Vector4(0.4f, 0.8f, 1f, 1f), $"Active Group Modifiers ({activeGroupMods.Count}):");
                                         ImGui.BeginChild($"ActiveGroupMods_{searchKey}", new Vector2(0, 160), ImGuiChildFlags.Borders);
-
-                                        var activeGroupMods = allCatMods.Where(m => group.ModPatternIds.Contains(m.Id)).ToList();
                                         if (activeGroupMods.Count == 0)
                                         {
                                             ImGui.TextDisabled("No modifiers added to this group profile yet.");
                                         }
                                         else
                                         {
-                                            foreach (var mod in activeGroupMods)
+                                            foreach (var option in activeGroupMods)
                                             {
-                                                ImGui.PushID($"GrpMod_{searchKey}_{mod.Id}");
-                                                if (ImGui.Button(" X "))
-                                                {
-                                                    group.ModPatternIds.Remove(mod.Id);
-                                                    SaveSettings();
-                                                }
-                                                ImGui.SameLine();
-                                                ImGui.TextUnformatted(mod.Name);
-
-                                                if (mod.MinRoll != mod.MaxRoll)
-                                                {
-                                                    ImGui.Indent(25f);
-                                                    if (!group.ModRequiredMinRolls.ContainsKey(mod.Id))
-                                                        group.ModRequiredMinRolls[mod.Id] = mod.MinRoll;
-
-                                                    float reqRoll = group.ModRequiredMinRolls[mod.Id];
-                                                    int intRoll = (int)reqRoll;
-                                                    if (ImGui.SliderInt($"Req. Min Roll##min_{mod.Id}", ref intRoll, (int)mod.MinRoll, (int)mod.MaxRoll))
-                                                    {
-                                                        group.ModRequiredMinRolls[mod.Id] = (float)intRoll;
-                                                        SaveSettings();
-                                                    }
-                                                    ImGui.Unindent(25f);
-                                                }
-                                                ImGui.PopID();
-                                                ImGui.Separator();
+                                                DrawEquipmentRollRow(group, option);
                                             }
                                         }
                                         ImGui.EndChild();
@@ -1377,6 +1355,76 @@ namespace StashUtility
                 ImGui.ColorEdit4(PluginText.T("stashutility.magic_color", "Magic Rarity Color"), ref Settings.MagicRarityColor);
                 ImGui.ColorEdit4(PluginText.T("stashutility.normal_color", "Normal Rarity Color"), ref Settings.NormalRarityColor);
             }
+        }
+
+        private void DrawEquipmentRollRow(Models.EquipmentGroup group, Models.EquipmentModOption option)
+        {
+            group.ModRequiredAverageDamageRolls ??= new();
+            var selected = option.Mods.Where(mod => group.ModPatternIds.Contains(mod.Id)).ToList();
+            var settingsChanged = false;
+            if (option.UsesAverageDamage)
+            {
+                foreach (var mod in selected) settingsChanged |= group.ModRequiredMinRolls.Remove(mod.Id);
+            }
+            var requirements = option.UsesAverageDamage ? group.ModRequiredAverageDamageRolls : group.ModRequiredMinRolls;
+            var limits = selected.Where(mod => requirements.ContainsKey(mod.Id))
+                .Select(mod => requirements[mod.Id]).ToList();
+            var hasLimits = limits.Count > 0;
+            var mixed = hasLimits && (limits.Count != selected.Count || limits.Distinct().Count() > 1);
+            var minimum = hasLimits ? limits[0] : option.MinRoll;
+
+            ImGui.PushID(option.Id);
+            if (ImGui.Button(" X "))
+            {
+                foreach (var mod in selected)
+                {
+                    group.ModPatternIds.RemoveAll(id => string.Equals(id, mod.Id, StringComparison.Ordinal));
+                    group.ModRequiredMinRolls.Remove(mod.Id);
+                    group.ModRequiredAverageDamageRolls.Remove(mod.Id);
+                }
+                SaveSettings();
+                ImGui.PopID();
+                ImGui.Separator();
+                return;
+            }
+            ImGui.SameLine();
+            ImGui.TextUnformatted(option.Name);
+            if (selected.Count < option.Mods.Count)
+                ImGuiHelper.ToolTip(PluginText.T("stashutility.equipment.saved_scope", "This saved rule keeps its original variants. Remove and add it again to include all variants."));
+
+            ImGui.Indent(25f);
+            if (option.SupportsRoll)
+            {
+                if (!hasLimits)
+                {
+                    foreach (var mod in selected) requirements[mod.Id] = option.MinRoll;
+                    settingsChanged = true;
+                }
+                var value = float.IsFinite(minimum) ? minimum : option.MinRoll;
+                var format = mixed ? PluginText.T("stashutility.equipment.mixed_minimum", "Mixed") : option.UsesAverageDamage ? "%.1f" : "%.0f";
+                var label = option.UsesAverageDamage
+                    ? PluginText.Label("stashutility.equipment.average_minimum", "Min. Average Added Damage", "equipment_minimum")
+                    : PluginText.Label("stashutility.equipment.minimum_label", "Req. Min Roll", "equipment_minimum");
+                if (ImGui.SliderFloat(label, ref value, option.MinRoll, option.MaxRoll, format, ImGuiSliderFlags.AlwaysClamp))
+                {
+                    foreach (var mod in selected) requirements[mod.Id] = value;
+                    settingsChanged = true;
+                }
+                if (option.UsesAverageDamage)
+                    ImGuiHelper.ToolTip(PluginText.F("stashutility.equipment.average_range", "Average added damage: {0} to {1}. Compares (actual minimum + actual maximum) / 2. Both Raw values are required.", option.MinRoll, option.MaxRoll));
+                else ImGuiHelper.ToolTip(PluginText.F("stashutility.equipment.minimum_range", "Minimum Raw Roll: {0} to {1}. Actual Roll must be at least the selected value.", option.MinRoll, option.MaxRoll));
+                if (mixed) ImGuiHelper.ToolTip(PluginText.T("stashutility.equipment.mixed_hint", "Previous per-variant conditions are retained. Moving this slider replaces them with one shared minimum."));
+            }
+            else
+            {
+                ImGui.TextDisabled(hasLimits ? minimum.ToString("0.##") : "—");
+                ImGuiHelper.ToolTip(PluginText.T("stashutility.equipment.multiple_raw", "Multiple or unknown Raw values: no combined slider. Existing conditions are retained."));
+            }
+
+            if (settingsChanged) SaveSettings();
+            ImGui.Unindent(25f);
+            ImGui.PopID();
+            ImGui.Separator();
         }
 
         private IntPtr GetExplorerRootAddress()

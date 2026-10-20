@@ -10,5 +10,7 @@ namespace StashUtility.Models
         public int MinMatchCount { get; set; } = 2;
         public List<string> ModPatternIds { get; set; } = new();
         public Dictionary<string, float> ModRequiredMinRolls { get; set; } = new();
+        // Average damage limits are stored separately from single-stat raw limits.
+        public Dictionary<string, float> ModRequiredAverageDamageRolls { get; set; } = new();
     }
 }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using StashUtility.Models;
 
 namespace StashUtility.Data
@@ -164,6 +165,10 @@ namespace StashUtility.Data
         }
 
         public static readonly List<EquipmentMod> AllEquipmentMods = LoadEquipmentMods();
+
+        public static readonly List<EquipmentModOption> AllEquipmentModOptions = AllEquipmentMods
+            .GroupBy(mod => mod.StatIds?.Count > 0 && !string.IsNullOrWhiteSpace(mod.PropertyId) ? mod.PropertyId : mod.Id)
+            .Select(group => new EquipmentModOption(group.Key, group)).ToList();
 
         private static List<EquipmentMod> LoadEquipmentMods()
         {
