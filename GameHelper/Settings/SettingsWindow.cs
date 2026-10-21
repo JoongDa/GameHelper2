@@ -8,6 +8,8 @@ namespace GameHelper.Settings
     using System.Collections.Generic;
     using System.Linq;
     using System.Numerics;
+    using System.Threading;
+    using System.Threading.Tasks;
     using ClickableTransparentOverlay;
     using ClickableTransparentOverlay.Win32;
     using Coroutine;
@@ -20,6 +22,7 @@ namespace GameHelper.Settings
     using GameHelper.RemoteEnums;
     using GameHelper.Ui;
     using L = GameHelper.Localization.OverlayLocalization;
+    using Update = Launcher.AutoUpdate;
 
     /// <summary>
     ///     Creates the MainMenu on the UI.
@@ -33,6 +36,20 @@ namespace GameHelper.Settings
         private const string PluginManagerPageId = "core:plugins";
         private static string selectedSettingsPage = PluginManagerPageId;
         private static string pluginReloadStatus = string.Empty;
+        private static bool startupUpdateCheckStarted;
+        private static bool manualUpdateCheck;
+        private static bool updateCardVisible;
+        private static bool updateCardOpen;
+        private static bool updateNameHovered;
+        private static double updateCardLastHovered;
+        private static Vector2 updateCardAnchor;
+        private static Vector2 updateCardSize = new(420f, 240f);
+        private static Task<Launcher.ReleaseInfo>? updateCheckTask;
+        private static Task? updateDownloadTask;
+        private static Launcher.ReleaseInfo? latestRelease;
+        private static UpdateStatus updateStatus;
+        private static string updateError = string.Empty;
+        private static int updateDownloadProgress;
 
         private static EntityFilterType efilterType = EntityFilterType.PATH;
         private static string filterText = string.Empty;
@@ -45,6 +62,15 @@ namespace GameHelper.Settings
         private static string specialMiscObjPath = string.Empty;
 
         private static string monterPathToIgnore = string.Empty;
+
+        private enum UpdateStatus
+        {
+            None,
+            UpToDate,
+            Available,
+            CheckFailed,
+            DownloadFailed,
+        }
 
 #if DEBUG
         private static string pluginForHotReload = string.Empty;
@@ -72,9 +98,46 @@ namespace GameHelper.Settings
                 return;
             }
 
-            ImGui.PushStyleColor(ImGuiCol.Text, ImGuiTheme.TextMuted);
-            ImGui.Text($"GameHelper {Core.GetVersion()}");
-            ImGui.PopStyleColor();
+            var updateBusy = updateCheckTask != null || updateDownloadTask != null;
+            ImGui.TextColored(updateBusy ? ImGuiTheme.TextMuted : ImGuiTheme.Accent, $"GameHelper {Core.GetVersion()}");
+            updateNameHovered = ImGui.IsItemHovered(updateCardOpen ? ImGuiHoveredFlags.AllowWhenBlockedByPopup : ImGuiHoveredFlags.None);
+            updateCardAnchor = new Vector2(ImGui.GetItemRectMin().X, ImGui.GetItemRectMax().Y + 2f);
+            if (updateNameHovered)
+            {
+                updateCardVisible = true;
+                updateCardLastHovered = ImGui.GetTime();
+                if (!updateBusy)
+                {
+                    ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+                    if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+                    {
+                        StartUpdateCheck(true);
+                    }
+                }
+            }
+
+            if (latestRelease != null && (updateStatus == UpdateStatus.Available || updateStatus == UpdateStatus.DownloadFailed))
+            {
+                ImGui.SameLine();
+                ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, Vector2.Zero);
+                ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
+                ImGui.PushStyleColor(ImGuiCol.Text, updateBusy ? ImGuiTheme.TextMuted : ImGuiTheme.Success);
+                ImGui.ArrowButton("CheckUpdateIndicator", ImGuiDir.Up);
+                ImGui.PopStyleColor(2);
+                ImGui.PopStyleVar();
+                if (ImGui.IsItemHovered(updateCardOpen ? ImGuiHoveredFlags.AllowWhenBlockedByPopup : ImGuiHoveredFlags.None))
+                {
+                    updateNameHovered = true;
+                    updateCardVisible = true;
+                    updateCardLastHovered = ImGui.GetTime();
+                    ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+                    if (!updateBusy && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+                    {
+                        StartUpdateCheck(true);
+                    }
+                }
+            }
+
             ImGui.SameLine();
             ImGui.TextDisabled("|");
             ImGui.SameLine();
@@ -90,6 +153,198 @@ namespace GameHelper.Settings
 #endif
 
             ImGui.EndMenuBar();
+        }
+
+        private static void StartUpdateCheck(bool manual)
+        {
+            if (updateCheckTask != null || updateDownloadTask != null)
+            {
+                return;
+            }
+
+            manualUpdateCheck = manual;
+            latestRelease = null;
+            updateStatus = UpdateStatus.None;
+            updateError = string.Empty;
+            updateCheckTask = Task.Run(() => Update.CheckForUpdatesAsync());
+        }
+
+        private static void PollUpdateTasks()
+        {
+            if (updateCheckTask is { IsCompleted: true } completedCheck)
+            {
+                updateCheckTask = null;
+                try
+                {
+                    latestRelease = completedCheck.GetAwaiter().GetResult();
+                    var hasUpdate = Update.IsNewerVersion(latestRelease.Version, Core.GetVersion());
+                    updateStatus = hasUpdate ? UpdateStatus.Available : UpdateStatus.UpToDate;
+                }
+                catch (Exception ex)
+                {
+                    updateStatus = UpdateStatus.CheckFailed;
+                    updateError = manualUpdateCheck ? ex.Message : string.Empty;
+                }
+            }
+
+            if (updateDownloadTask is { IsCompleted: true } completedDownload)
+            {
+                updateDownloadTask = null;
+                try
+                {
+                    completedDownload.GetAwaiter().GetResult();
+                    // Persist settings before the overlay stops ticking its render coroutines.
+                    CoroutineHandler.RaiseEvent(GameHelperEvents.TimeToSaveAllSettings);
+                    Update.LaunchUpdateAndExit(Environment.ProcessId);
+                    Core.GHSettings.IsOverlayRunning = false;
+                }
+                catch (Exception ex)
+                {
+                    updateStatus = UpdateStatus.DownloadFailed;
+                    updateError = ex.Message;
+                }
+            }
+        }
+
+        private static void DrawUpdateCard()
+        {
+            const string cardId = "###GameHelperUpdateCard";
+            var isOpen = ImGui.IsPopupOpen(cardId);
+            if (!updateCardVisible)
+            {
+                if (isOpen && ImGui.BeginPopup(cardId))
+                {
+                    ImGui.CloseCurrentPopup();
+                    ImGui.EndPopup();
+                }
+
+                updateCardOpen = false;
+                return;
+            }
+
+            if (!isOpen)
+            {
+                if (!updateNameHovered || ImGui.IsPopupOpen(string.Empty, ImGuiPopupFlags.AnyPopupId | ImGuiPopupFlags.AnyPopupLevel))
+                {
+                    updateCardVisible = false;
+                    updateCardOpen = false;
+                    return;
+                }
+
+                ImGui.OpenPopup(cardId);
+            }
+
+            var viewport = ImGui.GetMainViewport();
+            var width = Math.Min(420f, viewport.WorkSize.X - 16f);
+            var position = new Vector2(
+                Math.Clamp(updateCardAnchor.X, viewport.WorkPos.X + 8f, viewport.WorkPos.X + viewport.WorkSize.X - width - 8f),
+                Math.Clamp(updateCardAnchor.Y, viewport.WorkPos.Y + 8f,
+                    Math.Max(viewport.WorkPos.Y + 8f, viewport.WorkPos.Y + viewport.WorkSize.Y - updateCardSize.Y - 8f)));
+            ImGui.SetNextWindowPos(position);
+            ImGui.SetNextWindowSize(new Vector2(width, 0f));
+            // A non-modal popup keeps the card and its buttons above regular windows.
+            var flags = ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.AlwaysAutoResize
+                | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoNav;
+            if (!ImGui.BeginPopup(cardId, flags))
+            {
+                updateCardOpen = false;
+                return;
+            }
+
+            updateCardOpen = true;
+            if (ImGui.IsWindowHovered(ImGuiHoveredFlags.AllowWhenBlockedByActiveItem))
+            {
+                updateCardLastHovered = ImGui.GetTime();
+            }
+            else if (!updateNameHovered && ImGui.GetTime() - updateCardLastHovered > 0.25)
+            {
+                updateCardVisible = false;
+                ImGui.CloseCurrentPopup();
+            }
+
+            ImGui.TextColored(ImGuiTheme.Accent, L.T("settings.update.title", "GameHelper Update"));
+            ImGui.TextDisabled(L.T("settings.update.check_hint", "Click the name or arrow to check for updates."));
+            ImGui.Text(L.F("settings.update.current_version", "Current version: {0}", Core.GetVersion()));
+            if (latestRelease != null)
+            {
+                ImGui.Text(L.F("settings.update.latest_version", "Latest version: {0}", latestRelease.Version));
+            }
+
+            ImGui.Separator();
+            if (updateCheckTask != null)
+            {
+                ImGui.TextWrapped(L.T("settings.update.checking", "Checking for updates..."));
+            }
+            else if (updateDownloadTask != null)
+            {
+                ImGui.TextWrapped(L.T("settings.update.downloading", "Downloading and preparing the update..."));
+                var progress = Volatile.Read(ref updateDownloadProgress);
+                ImGui.ProgressBar(progress / 100f, new Vector2(-1f, 0f), $"{progress}%");
+            }
+            else
+            {
+                switch (updateStatus)
+                {
+                    case UpdateStatus.UpToDate:
+                        ImGui.TextWrapped(L.T("settings.update.up_to_date", "You are using the latest version."));
+                        break;
+                    case UpdateStatus.Available:
+                        ImGui.TextWrapped(L.T("settings.update.available", "A new version is available. Update and restart GameHelper?"));
+                        break;
+                    case UpdateStatus.CheckFailed:
+                        ImGui.TextWrapped(L.T("settings.update.check_failed", "Could not check for updates. Please try again later."));
+                        break;
+                    case UpdateStatus.DownloadFailed:
+                        ImGui.TextWrapped(L.T("settings.update.download_failed", "Could not prepare the update. GameHelper is still running. Please try again."));
+                        break;
+                }
+
+                if (!string.IsNullOrWhiteSpace(updateError)
+                    && ((updateStatus == UpdateStatus.CheckFailed && manualUpdateCheck) || updateStatus == UpdateStatus.DownloadFailed))
+                {
+                    ImGui.Spacing();
+                    ImGui.TextWrapped(L.F("settings.update.failure_reason", "Reason: {0}", updateError));
+                }
+            }
+
+            ImGui.Spacing();
+            var downloading = updateDownloadTask != null;
+            var canUpdate = latestRelease != null
+                && updateCheckTask == null
+                && !downloading
+                && (updateStatus == UpdateStatus.Available || updateStatus == UpdateStatus.DownloadFailed);
+            if (canUpdate)
+            {
+                if (ImGui.Button(L.Label("settings.update.install", "Update and restart", "InstallUpdate")) && latestRelease is { } release)
+                {
+                    updateError = string.Empty;
+                    Interlocked.Exchange(ref updateDownloadProgress, 0);
+                    updateDownloadTask = Task.Run(() => Update.PrepareUpdateAsync(
+                        release,
+                        new Progress<int>(progress => Interlocked.Exchange(ref updateDownloadProgress, Math.Clamp(progress, 0, 100)))));
+                }
+            }
+            else
+            {
+                ImGui.BeginDisabled(updateCheckTask != null || downloading);
+                if (ImGui.Button(L.Label("settings.update.check", "Check for updates", "CheckUpdate")))
+                {
+                    StartUpdateCheck(true);
+                }
+
+                ImGui.EndDisabled();
+            }
+
+            ImGui.SameLine();
+            if (ImGui.Button(L.Label("settings.update.later", "Later", "DeferUpdate")))
+            {
+                updateCardVisible = false;
+                ImGui.CloseCurrentPopup();
+            }
+
+            updateCardSize = ImGui.GetWindowSize();
+            ImGui.EndPopup();
+            updateCardOpen = ImGui.IsPopupOpen(cardId);
         }
 
         private static void DrawSettingsLayout()
@@ -1036,6 +1291,14 @@ namespace GameHelper.Settings
             while (true)
             {
                 yield return new Wait(GameHelperEvents.OnRender);
+                if (!startupUpdateCheckStarted)
+                {
+                    startupUpdateCheckStarted = true;
+                    StartUpdateCheck(false);
+                }
+
+                PollUpdateTasks();
+                updateCardOpen = ImGui.IsPopupOpen("###GameHelperUpdateCard");
                 if (Utils.IsKeyPressedAndNotTimeout(Core.GHSettings.MainMenuHotKey))
                 {
                     if (isSettingsWindowVisible)
@@ -1052,6 +1315,8 @@ namespace GameHelper.Settings
                 Core.IsSettingsMenuOpen = isSettingsWindowVisible;
                 if (!isSettingsWindowVisible)
                 {
+                    updateCardVisible = false;
+                    DrawUpdateCard();
                     continue;
                 }
 
@@ -1063,8 +1328,10 @@ namespace GameHelper.Settings
 
                 if (DrawTitleBarHideButton())
                 {
+                    updateCardVisible = false;
                     HideSettingsWindow();
                     ImGui.End();
+                    DrawUpdateCard();
                     continue;
                 }
 
@@ -1081,13 +1348,22 @@ namespace GameHelper.Settings
 
                 if (!isMainMenuExpanded)
                 {
+                    updateCardVisible = false;
                     ImGui.End();
+                    DrawUpdateCard();
                     continue;
                 }
 
                 DrawManuBar();
                 DrawSettingsLayout();
+                var closing = ImGui.IsPopupOpen("GameHelperCloseConfirmation");
                 ImGui.End();
+                if (closing)
+                {
+                    updateCardVisible = false;
+                }
+
+                DrawUpdateCard();
             }
         }
 
