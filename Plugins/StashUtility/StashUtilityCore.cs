@@ -8,6 +8,7 @@ namespace StashUtility
     using GameHelper.RemoteObjects.UiElement;
     using GameHelper.Utils;
     using GameOffsets.Objects.UiElement;
+    using GameOffsets.Objects.Components;
     using GameOffsets.Natives;
     using ImGuiNET;
     using Newtonsoft.Json;
@@ -69,6 +70,8 @@ namespace StashUtility
         // Equipment UI State
         private readonly Dictionary<string, string> equipmentCategorySearchTerms = new();
         private readonly Dictionary<string, int> equipmentCategorySelectedIndices = new();
+        private readonly Dictionary<string, List<Models.EquipmentModOption>> equipmentOptionsByCategory = new();
+        private Dictionary<string, int> equipmentRawCounts;
 
         // Debug UI Path Explorer State
         private readonly List<int> currentDebugPath = new();
@@ -823,43 +826,18 @@ namespace StashUtility
                             {
                                 var profile = Settings.TabletProfiles[tabletType];
 
-                                Func<Models.TabletMod, bool> filterFunc;
-                                if (tabletType == "Breach Tablet")
+                                Func<Models.TabletMod, bool> filterFunc = tabletType switch
                                 {
-                                    filterFunc = m => IsGeneralMod(m) || m.Id.Contains("Breach", StringComparison.OrdinalIgnoreCase);
-                                }
-                                else if (tabletType == "Expedition Tablet")
-                                {
-                                    filterFunc = m => IsGeneralMod(m) || m.Id.Contains("Expedition", StringComparison.OrdinalIgnoreCase);
-                                }
-                                else if (tabletType == "Delirium Tablet")
-                                {
-                                    filterFunc = m => IsGeneralMod(m) || m.Id.Contains("Delirium", StringComparison.OrdinalIgnoreCase);
-                                }
-                                else if (tabletType == "Ritual Tablet")
-                                {
-                                    filterFunc = m => IsGeneralMod(m) || m.Id.Contains("Ritual", StringComparison.OrdinalIgnoreCase);
-                                }
-                                else if (tabletType == "Abyss Tablet")
-                                {
-                                    filterFunc = m => IsGeneralMod(m) || m.Id.Contains("Abyss", StringComparison.OrdinalIgnoreCase);
-                                }
-                                else if (tabletType == "Temple Tablet")
-                                {
-                                    filterFunc = m => IsGeneralMod(m) || m.Id.Contains("Incursion", StringComparison.OrdinalIgnoreCase);
-                                }
-                                else if (tabletType == "Overseer Tablet")
-                                {
-                                    filterFunc = m => IsGeneralMod(m) || m.Id.Contains("Boss", StringComparison.OrdinalIgnoreCase);
-                                }
-                                else if (tabletType == "Irradiated Tablet")
-                                {
-                                    filterFunc = m => IsGeneralMod(m) || m.Id.Contains("Irradiated", StringComparison.OrdinalIgnoreCase);
-                                }
-                                else
-                                {
-                                    filterFunc = m => IsGeneralMod(m);
-                                }
+                                    "Breach Tablet" => m => m.Category == "General" || m.Category == "Breach",
+                                    "Expedition Tablet" => m => m.Category == "General" || m.Category == "Expedition",
+                                    "Delirium Tablet" => m => m.Category == "General" || m.Category == "Delirium",
+                                    "Ritual Tablet" => m => m.Category == "General" || m.Category == "Ritual",
+                                    "Abyss Tablet" => m => m.Category == "General" || m.Category == "Abyss",
+                                    "Temple Tablet" => m => m.Category == "General" || m.Category == "Temple" || m.Category == "Incursion",
+                                    "Overseer Tablet" => m => m.Category == "General" || m.Category == "Overseer",
+                                    "Irradiated Tablet" => m => m.Category == "General" || m.Category == "Irradiated",
+                                    _ => m => m.Category == "General"
+                                };
 
                                 var tabMods = Data.ModDatabase.AllTabletMods.Where(filterFunc).ToList();
 
@@ -1580,7 +1558,7 @@ namespace StashUtility
 
         public override void DrawUI()
         {
-            if (!Settings.EnableWaystoneManager && !Settings.EnableTabletManager && !Settings.EnableJewelManager && !Settings.EnableDebugProbe && !Settings.EnableMerchantPurchasePanel) return;
+            if (!Settings.EnableWaystoneManager && !Settings.EnableTabletManager && !Settings.EnableJewelManager && !Settings.EnableEquipmentManager && !Settings.EnableDebugProbe && !Settings.EnableMerchantPurchasePanel) return;
 
             if (!Settings.ShowOverlayInBackground && !Core.Process.Foreground)
             {
@@ -1609,7 +1587,7 @@ namespace StashUtility
                 DrawDebugOverlay();
             }
 
-            if (Settings.EnableWaystoneManager || Settings.EnableTabletManager || Settings.EnableJewelManager)
+            if (Settings.EnableWaystoneManager || Settings.EnableTabletManager || Settings.EnableJewelManager || Settings.EnableEquipmentManager)
             {
                 bool isCoopMode = Core.GHSettings.EnableControllerMode && gameUi.LeftPanel.Address != IntPtr.Zero;
 
@@ -2376,7 +2354,7 @@ namespace StashUtility
 
             // Category mismatch guards: prevent matching e.g. "Spell Damage" to "Critical Spell Damage"
             bool gameHasCrit = cleanGame.Contains("crit");
-            bool defHasCrit = gameModId.Contains("crit") || defName.Contains("crit");
+            bool defHasCrit = gameModId.Contains("crit") || defName.Contains("critical");
             if (defHasCrit != gameHasCrit) return false;
 
             bool gameHasSpeed = cleanGame.Contains("speed");
@@ -2441,18 +2419,22 @@ namespace StashUtility
             string coreGameMod = cleanGame.StartsWith("jewel") ? cleanGame.Substring(5) : cleanGame;
             string coreGameModId = gameModId.StartsWith("jewel") ? gameModId.Substring(5) : gameModId;
 
-            if (!string.IsNullOrEmpty(coreGameModId) && coreGameModId.Length > 2)
+            // Normalize multiplier / damage / bonus synonyms for critical damage matching
+            string normCoreGameMod = coreGameMod.Replace("multiplier", "damage").Replace("multi", "damage");
+            string normCoreGameModId = coreGameModId.Replace("multiplier", "damage").Replace("multi", "damage");
+
+            if (!string.IsNullOrEmpty(normCoreGameModId) && normCoreGameModId.Length > 2)
             {
-                if (coreGameMod.Contains(coreGameModId, StringComparison.OrdinalIgnoreCase) ||
-                    coreGameModId.Contains(coreGameMod, StringComparison.OrdinalIgnoreCase))
+                if (normCoreGameMod.Contains(normCoreGameModId, StringComparison.OrdinalIgnoreCase) ||
+                    normCoreGameModId.Contains(normCoreGameMod, StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
                 }
             }
 
             // 5. Match core game mod phrase against def.Name description
-            string cleanDefNameAlpha = System.Text.RegularExpressions.Regex.Replace(defName, @"[^a-z0-9]", "");
-            if (coreGameMod.Length > 3 && cleanDefNameAlpha.Contains(coreGameMod, StringComparison.OrdinalIgnoreCase))
+            string cleanDefNameAlpha = System.Text.RegularExpressions.Regex.Replace(defName, @"[^a-z0-9]", "").Replace("multiplier", "damage").Replace("multi", "damage");
+            if (normCoreGameMod.Length > 3 && cleanDefNameAlpha.Contains(normCoreGameMod, StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
@@ -2463,6 +2445,13 @@ namespace StashUtility
         private void EvaluateAndHighlightItem(Item item, Vector2 pos, Vector2 size)
         {
             if (item == null) return;
+
+            var equipmentCategory = EquipmentMatcher.GetCategory(item.Path);
+            if (equipmentCategory != null)
+            {
+                if (Settings.EnableEquipmentManager) EvaluateAndHighlightEquipment(item, equipmentCategory, pos, size);
+                return;
+            }
 
             if (!item.TryGetComponent<Base>(out var baseComponent)) return;
 
@@ -2648,7 +2637,8 @@ namespace StashUtility
                         {
                             var def = Data.ModDatabase.AllTabletMods
                                 .OrderByDescending(d => d.Id.Length)
-                                .FirstOrDefault(d => mod.name.Contains(d.Id, StringComparison.OrdinalIgnoreCase));
+                                .FirstOrDefault(d => mod.name.Contains(d.Id, StringComparison.OrdinalIgnoreCase)
+                                    || (d.Id.StartsWith("Tower", StringComparison.OrdinalIgnoreCase) && mod.name.Contains(d.Id.Substring(5), StringComparison.OrdinalIgnoreCase)));
 
                             if (def != null)
                             {
@@ -2813,29 +2803,88 @@ namespace StashUtility
                 }
             }
 
-            bool passesNumericalFilters = true;
-            if (isWaystone)
+            // Check whether a value satisfies the enabled minimum and maximum bounds.
+            static bool MatchRange(
+                int value,
+                bool useMin, int min,
+                bool useMax, int max)
             {
-                if (Settings.FilterMaxRevives && revives > Settings.MaxRevivesAvailable) passesNumericalFilters = false;
-                if (Settings.FilterMinItemRarity && sumRarity < Settings.MinItemRarity) passesNumericalFilters = false;
-                if (Settings.FilterMaxItemRarity && sumRarity > Settings.MaxItemRarity) passesNumericalFilters = false;
-                if (Settings.FilterMinPackSize && sumPackSize < Settings.MinPackSize) passesNumericalFilters = false;
-                if (Settings.FilterMaxPackSize && sumPackSize > Settings.MaxPackSize) passesNumericalFilters = false;
-                if (Settings.FilterMinMonsterRarity && sumMonstRarity < Settings.MinMonsterRarity) passesNumericalFilters = false;
-                if (Settings.FilterMaxMonsterRarity && sumMonstRarity > Settings.MaxMonsterRarity) passesNumericalFilters = false;
-                if (Settings.FilterMinMonsterEffectiveness && sumEffect < Settings.MinMonsterEffectiveness) passesNumericalFilters = false;
-                if (Settings.FilterMaxMonsterEffectiveness && sumEffect > Settings.MaxMonsterEffectiveness) passesNumericalFilters = false;
-                if (Settings.FilterMinWaystoneDropChance && sumDropChance < Settings.MinWaystoneDropChance) passesNumericalFilters = false;
-                if (Settings.FilterMaxWaystoneDropChance && sumDropChance > Settings.MaxWaystoneDropChance) passesNumericalFilters = false;
-                if (Settings.FilterMinExplicitMods && explicitModsCount < Settings.MinExplicitMods) passesNumericalFilters = false;
-                if (Settings.FilterMaxExplicitMods && explicitModsCount > Settings.MaxExplicitMods) passesNumericalFilters = false;
+                return (useMin || useMax)
+                    && (!useMin || value >= min)
+                    && (!useMax || value <= max);
             }
 
-            if ((isTablet || isJewel) && !isBad && !isGood) return;
+            // Normal filtering uses OR logic across different attributes.
+            bool normalMatch = false;
 
-            if (isWaystone && Settings.FilterBadModsOnlyOnHighlighted && !passesNumericalFilters) return;
+            if (isWaystone)
+            {
+                normalMatch =
+                    MatchRange(
+                        sumRarity,
+                        Settings.FilterMinItemRarity, Settings.MinItemRarity,
+                        Settings.FilterMaxItemRarity, Settings.MaxItemRarity)
 
-            if (!isBad && !passesNumericalFilters) return;
+                    || MatchRange(
+                        sumPackSize,
+                        Settings.FilterMinPackSize, Settings.MinPackSize,
+                        Settings.FilterMaxPackSize, Settings.MaxPackSize)
+
+                    || MatchRange(
+                        sumMonstRarity,
+                        Settings.FilterMinMonsterRarity, Settings.MinMonsterRarity,
+                        Settings.FilterMaxMonsterRarity, Settings.MaxMonsterRarity)
+
+                    || MatchRange(
+                        sumEffect,
+                        Settings.FilterMinMonsterEffectiveness,
+                        Settings.MinMonsterEffectiveness,
+                        Settings.FilterMaxMonsterEffectiveness,
+                        Settings.MaxMonsterEffectiveness)
+
+                    || MatchRange(
+                        sumDropChance,
+                        Settings.FilterMinWaystoneDropChance,
+                        Settings.MinWaystoneDropChance,
+                        Settings.FilterMaxWaystoneDropChance,
+                        Settings.MaxWaystoneDropChance)
+
+                    || MatchRange(
+                        explicitModsCount,
+                        Settings.FilterMinExplicitMods, Settings.MinExplicitMods,
+                        Settings.FilterMaxExplicitMods, Settings.MaxExplicitMods);
+
+                // Revive count is a shared constraint for both normal and great filters.
+                if (Settings.FilterMaxRevives &&
+                    revives > Settings.MaxRevivesAvailable)
+                {
+                    normalMatch = false;
+                    isGreat = false;
+                }
+            }
+
+            // Evaluate normal and great filters independently
+            if (isWaystone)
+            {
+                bool numericMatched = normalMatch || isGreat;
+
+                // Preserve optional bad-mod filtering.
+                if (Settings.FilterBadModsOnlyOnHighlighted &&
+                    isBad && !numericMatched)
+                {
+                    isBad = false;
+                }
+
+                // Skip rendering when neither numeric nor mod-based criteria match.
+                if (!numericMatched && !isGood && !isBad)
+                {
+                    return;
+                }
+            }
+            else if ((isTablet || isJewel) && !isBad && !isGood)
+            {
+                return;
+            }
 
             float scale = size.X / 52.0f;
             float margin = Settings.BorderMargin * scale; // Adaptive margin for 4K scaling where bounding boxes overlap
@@ -2848,7 +2897,11 @@ namespace StashUtility
                 return;
             }
 
-            if (showModBorder && (isBad || isGood || passesNumericalFilters))
+            bool shouldDrawModBorder = isWaystone
+                ? (normalMatch || isGood || isBad)
+                : (isBad || isGood);
+
+            if (showModBorder && shouldDrawModBorder)
             {
                 Vector4 borderCol = isJewel
                     ? (isBad ? Settings.JewelBadColor : Settings.JewelGoodColor)
@@ -2906,6 +2959,110 @@ namespace StashUtility
                 dl.AddTriangleFilled(topTip, topTip + new Vector2(-arrowSize / 2, arrowSize), topTip + new Vector2(arrowSize / 2, arrowSize), ImGuiHelper.Color(arrowCol));
                 dl.AddTriangle(topTip, topTip + new Vector2(-arrowSize / 2, arrowSize), topTip + new Vector2(arrowSize / 2, arrowSize), 0xFF000000, Math.Max(1.0f, 1.5f * scale));
             }
+        }
+
+        private void EvaluateAndHighlightEquipment(Item item, string category, Vector2 pos, Vector2 size)
+        {
+            if (Settings.EnableDebugProbe && !freezeHoveredWaystone &&
+                ImGui.IsMouseHoveringRect(pos, pos + size)) lastHoveredWaystone = item;
+
+            if (Settings.EquipmentCategoryGroups == null ||
+                !Settings.EquipmentCategoryGroups.TryGetValue(category, out var groups) || groups == null ||
+                !groups.Any(group => group?.ModPatternIds?.Count > 0)) return;
+
+            if (!TryReadEquipmentMods(item, out var explicitMods)) return;
+            if (!equipmentOptionsByCategory.TryGetValue(category, out var options))
+            {
+                options = Data.ModDatabase.AllEquipmentModOptions
+                    .Where(option => option.Mods[0].Category == category).ToList();
+                equipmentOptionsByCategory[category] = options;
+            }
+
+            int matchedCount = 0;
+            bool matched = false;
+            foreach (var group in groups)
+            {
+                if (group?.ModPatternIds?.Count is not > 0) continue;
+                int count = EquipmentMatcher.CountMatches(group, options, explicitMods);
+                if (count < Math.Max(1, group.MinMatchCount)) continue;
+                matched = true;
+                matchedCount = Math.Max(matchedCount, count);
+            }
+            if (!matched) return;
+
+            float scale = size.X / 52.0f;
+            float margin = Settings.BorderMargin * scale;
+            float thickness = Settings.ShowEquipmentModBorder ? Math.Max(1.5f, Settings.BorderThickness - 0.5f) : 0f;
+            var dl = ImGui.GetBackgroundDrawList();
+            if (Settings.ShowEquipmentModBorder)
+            {
+                float inset = margin + thickness / 2f;
+                AddStyledRect(dl, pos + new Vector2(inset), pos + size - new Vector2(inset),
+                    ImGuiHelper.Color(Settings.EquipmentGoodColor), thickness, Settings.FrameStyleGood);
+            }
+
+            if (Settings.FilterEquipmentGreat && matchedCount >= Math.Max(1, Settings.MinEquipmentGoodMods))
+            {
+                float arrowSize = Settings.GreatIndicatorSize * scale;
+                float padding = margin + thickness + 4f * scale;
+                var tip = Settings.GreatIndicatorPosition switch
+                {
+                    1 => pos + new Vector2(size.X - padding - arrowSize / 2f, padding),
+                    2 => pos + new Vector2(padding + arrowSize / 2f, size.Y - padding - arrowSize),
+                    3 => pos + new Vector2(size.X - padding - arrowSize / 2f, size.Y - padding - arrowSize),
+                    _ => pos + new Vector2(padding + arrowSize / 2f, padding)
+                };
+                var left = tip + new Vector2(-arrowSize / 2f, arrowSize);
+                var right = tip + new Vector2(arrowSize / 2f, arrowSize);
+                dl.AddTriangleFilled(tip, left, right, ImGuiHelper.Color(Settings.EquipmentColorGreat));
+                dl.AddTriangle(tip, left, right, 0xFF000000, Math.Max(1f, 1.5f * scale));
+            }
+        }
+
+        private bool TryReadEquipmentMods(Item item, out List<(string name, (float v0, float v1) vals)> mods)
+        {
+            mods = new();
+            equipmentRawCounts ??= Data.ModDatabase.AllEquipmentMods
+                .Where(mod => !string.IsNullOrEmpty(mod.GameModId))
+                .GroupBy(mod => mod.GameModId, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key,
+                    group => group.Select(mod => mod.StatIds?.Count ?? 0).Distinct().Count() == 1
+                        ? group.First().StatIds?.Count ?? 0 : -1, StringComparer.Ordinal);
+            var field = typeof(Entity).GetField("componentAddresses", BindingFlags.Instance | BindingFlags.NonPublic);
+            if (field?.GetValue(item) is not System.Collections.Concurrent.ConcurrentDictionary<string, IntPtr> addresses ||
+                !addresses.TryGetValue("Mods", out var address) ||
+                !TryReadMemory<ModsOffsets>(address, out var before) || before.Header.EntityPtr != item.Address ||
+                !TryReadVector(before.Details0.Mods.ExplicitMods, 64, out ModArrayStruct[] entries)) return false;
+
+            var rawValues = new List<int[]>(entries.Length);
+            foreach (var entry in entries)
+            {
+                if (!TryReadVector(entry.Values, 16, out int[] values) || values.Length == 0 ||
+                    !TryReadMemory<IntPtr>(entry.ModsPtr, out var namePtr) || !IsReadableAddress(namePtr)) return false;
+
+                var nameBytes = ReadStdVector<byte>(new StdVector { First = namePtr, Last = namePtr + 256 });
+                if (nameBytes.Length != 256) return false;
+                int nameLength = 0;
+                while (nameLength < 256 && (nameBytes[nameLength] != 0 || nameBytes[nameLength + 1] != 0)) nameLength += 2;
+                if (nameLength == 0 || nameLength == 256) return false;
+                var name = System.Text.Encoding.Unicode.GetString(nameBytes, 0, nameLength);
+                if (equipmentRawCounts.TryGetValue(name, out var expectedCount) && expectedCount != values.Length) return false;
+                rawValues.Add(values);
+                mods.Add((name, values.Length == 1 ? (entry.Value0, float.NaN) : (values[0], values[1])));
+            }
+
+            // Never reuse a partial result when currency changes an item during the read.
+            if (!TryReadMemory<ModsOffsets>(address, out var after) || after.Header.EntityPtr != item.Address ||
+                before.Details0.Rarity != after.Details0.Rarity ||
+                !before.Details0.Mods.ExplicitMods.Equals(after.Details0.Mods.ExplicitMods) ||
+                !TryReadVector(after.Details0.Mods.ExplicitMods, 64, out ModArrayStruct[] current) || current.Length != entries.Length) return false;
+            for (int i = 0; i < entries.Length; i++)
+            {
+                if (entries[i].ModsPtr != current[i].ModsPtr || entries[i].Value0 != current[i].Value0 ||
+                    !entries[i].Values.Equals(current[i].Values) ||
+                    !TryReadVector(current[i].Values, 16, out int[] values) || !rawValues[i].SequenceEqual(values)) return false;
+            }
+            return true;
         }
 
         private void AddStyledRect(ImDrawListPtr dl, Vector2 min, Vector2 max, uint color, float thickness, int style)
@@ -3288,8 +3445,8 @@ namespace StashUtility
                     var genericMethod = this.handleObj.GetType()
                         .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
                         .First(m => m.Name == "TryReadMemory" && m.IsGenericMethod && m.GetParameters().Length == 2);
-                    genericMethod = genericMethod.MakeGenericMethod(typeof(T));
-                    tryReadMemoryMethods[typeof(T)] = genericMethod;
+                    method = genericMethod.MakeGenericMethod(typeof(T));
+                    tryReadMemoryMethods[typeof(T)] = method;
                 }
 
                 var args = new object[] { address, default(T) };
@@ -3315,6 +3472,32 @@ namespace StashUtility
                 readStdVectorMethods[typeof(T)] = method;
             }
             return (T[])method.Invoke(this.handleObj, new object[] { nativeContainer });
+        }
+
+        private static bool IsReadableAddress(IntPtr address)
+        {
+            long value = address.ToInt64();
+            return value >= 0x10000 && value <= 0x7FFFFFFFFFFF;
+        }
+
+        private static bool TryGetVectorCount<T>(StdVector vector, int maximum, out int count) where T : unmanaged
+        {
+            count = 0;
+            if (vector.First == vector.Last) return vector.First == IntPtr.Zero || IsReadableAddress(vector.First);
+            if (!IsReadableAddress(vector.First) || !IsReadableAddress(vector.Last)) return false;
+            long bytes = vector.Last.ToInt64() - vector.First.ToInt64();
+            int elementSize = Marshal.SizeOf<T>();
+            if (bytes < 0 || bytes % elementSize != 0 || bytes / elementSize > maximum) return false;
+            count = (int)(bytes / elementSize);
+            return true;
+        }
+
+        private bool TryReadVector<T>(StdVector vector, int maximum, out T[] values) where T : unmanaged
+        {
+            values = Array.Empty<T>();
+            if (!TryGetVectorCount<T>(vector, maximum, out var count)) return false;
+            values = ReadStdVector<T>(vector);
+            return values.Length == count;
         }
 
         private string ReadStdWString(StdWString nativeContainer)
