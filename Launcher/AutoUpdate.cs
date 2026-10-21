@@ -10,8 +10,8 @@
 
     public static class AutoUpdate
     {
-        private const string ReleasesApiUrl = "";
-        
+        private const string ReleasesApiUrl = "https://api.github.com/repos/JoongDa/GameHelper2/releases/latest";
+
         private static readonly HttpClient HttpClient = new();
         private static string? extractedPath;
         private static string? newVersion;
@@ -76,12 +76,8 @@
             try
             {
                 var response = await HttpClient.GetStringAsync(ReleasesApiUrl);
-                var releases = JArray.Parse(response);
-                if (releases.Count > 0)
-                {
-                    return releases[0]["tag_name"]?.ToString();
-                }
-                return null;
+                var release = JObject.Parse(response);
+                return release["tag_name"]?.ToString();
             }
             catch (Exception ex)
             {
@@ -163,22 +159,15 @@
             try
             {
                 var response = await HttpClient.GetStringAsync(ReleasesApiUrl);
-                var releases = JArray.Parse(response);
+                var release = JObject.Parse(response);
 
-                foreach (var release in releases)
+                if (!string.Equals(release["tag_name"]?.ToString(), version, StringComparison.Ordinal) ||
+                    release["assets"] is not JArray assets)
                 {
-                    var tagName = release["tag_name"]?.ToString();
-                    if (tagName == version)
-                    {
-                        var links = release["assets"]?["links"] as JArray;
-                        if (links?.Count > 0)
-                        {
-                            return links[0]["url"]?.ToString();
-                        }
-                    }
+                    return null;
                 }
 
-                return null;
+                return assets.Count > 0 ? assets[0]["browser_download_url"]?.ToString() : null;
             }
             catch (Exception ex)
             {
