@@ -226,7 +226,7 @@
                     return;
                 }
 
-                var currentDir = AppDomain.CurrentDomain.BaseDirectory;
+                var currentDir = Path.TrimEndingDirectorySeparator(AppDomain.CurrentDomain.BaseDirectory);
                 var parentDir = Directory.GetParent(currentDir)?.FullName;
                 var launcherPath = Path.Combine(currentDir, "Launcher.exe");
                 var tempDir = Path.Combine(Path.GetTempPath(), "GameHelperUpdate");
@@ -249,7 +249,7 @@ if ($launcherProcess) {{
 
 Write-Host 'Installing update...';
 try {{
-    Copy-Item -Path '{extractedPath}\*' -Destination '{parentDir}' -Recurse -Force;
+    Copy-Item -Path '{extractedPath}\*' -Destination '{parentDir}' -Recurse -Force -ErrorAction Stop;
     Write-Host 'Update completed successfully!';
     Write-Host 'Restarting GameHelper Launcher...';
     Start-Process -FilePath '{launcherPath}' -WorkingDirectory '{currentDir}';
