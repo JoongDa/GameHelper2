@@ -53,6 +53,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SekhemaHelper", "Plugins\Se
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AmanamuVoidAlert", "Plugins\AmanamuVoidAlert\AmanamuVoidAlert.csproj", "{6F02FDA7-8F08-4871-B5D2-44A7B446A5DD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RunecraftHelper", "Plugins\RunecraftHelper\RunecraftHelper.csproj", "{7B97D431-41AB-4F26-9B38-8B0EAD90147B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -267,6 +269,18 @@ Global
 		{6F02FDA7-8F08-4871-B5D2-44A7B446A5DD}.Release|x64.Build.0 = Release|Any CPU
 		{6F02FDA7-8F08-4871-B5D2-44A7B446A5DD}.Release|x86.ActiveCfg = Release|Any CPU
 		{6F02FDA7-8F08-4871-B5D2-44A7B446A5DD}.Release|x86.Build.0 = Release|Any CPU
+		{7B97D431-41AB-4F26-9B38-8B0EAD90147B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7B97D431-41AB-4F26-9B38-8B0EAD90147B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7B97D431-41AB-4F26-9B38-8B0EAD90147B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{7B97D431-41AB-4F26-9B38-8B0EAD90147B}.Debug|x64.Build.0 = Debug|Any CPU
+		{7B97D431-41AB-4F26-9B38-8B0EAD90147B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7B97D431-41AB-4F26-9B38-8B0EAD90147B}.Debug|x86.Build.0 = Debug|Any CPU
+		{7B97D431-41AB-4F26-9B38-8B0EAD90147B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7B97D431-41AB-4F26-9B38-8B0EAD90147B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7B97D431-41AB-4F26-9B38-8B0EAD90147B}.Release|x64.ActiveCfg = Release|Any CPU
+		{7B97D431-41AB-4F26-9B38-8B0EAD90147B}.Release|x64.Build.0 = Release|Any CPU
+		{7B97D431-41AB-4F26-9B38-8B0EAD90147B}.Release|x86.ActiveCfg = Release|Any CPU
+		{7B97D431-41AB-4F26-9B38-8B0EAD90147B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -286,6 +300,7 @@ Global
 		{08D92EA5-0954-40EA-B2F3-31A2041C5B91} = {9FA3D6BD-1EC1-3BA5-80CB-CE02773A58D5}
 		{2D351465-F1B9-4D8F-A32A-A42D4115E815} = {9FA3D6BD-1EC1-3BA5-80CB-CE02773A58D5}
 		{6F02FDA7-8F08-4871-B5D2-44A7B446A5DD} = {9FA3D6BD-1EC1-3BA5-80CB-CE02773A58D5}
+		{7B97D431-41AB-4F26-9B38-8B0EAD90147B} = {9FA3D6BD-1EC1-3BA5-80CB-CE02773A58D5}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {6CB26318-014D-4959-8116-07FD055D941A}
