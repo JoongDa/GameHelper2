@@ -14,7 +14,7 @@ namespace Launcher
     using System.Threading.Tasks;
     using Newtonsoft.Json.Linq;
 
-    public sealed record ReleaseInfo(string Version, string DownloadUrl);
+    public sealed record ReleaseInfo(string Version, string DownloadUrl, string ReleaseNotes = "");
 
     public static class AutoUpdate
     {
@@ -50,7 +50,7 @@ namespace Launcher
                 throw new InvalidDataException("The release has no valid download URL.");
             }
 
-            return new ReleaseInfo(version, downloadUrl!);
+            return new ReleaseInfo(version, downloadUrl!, release["body"]?.ToString() ?? string.Empty);
         }
 
         public static bool IsNewerVersion(string latestVersion, string currentVersion)
