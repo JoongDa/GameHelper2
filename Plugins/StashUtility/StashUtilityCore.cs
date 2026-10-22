@@ -20,7 +20,7 @@ namespace StashUtility
     using System.Reflection;
     using System.Runtime.InteropServices;
 
-    public sealed class StashUtilityCore : PCore<StashUtilitySettings>
+    public sealed partial class StashUtilityCore : PCore<StashUtilitySettings>
     {
         private object handleObj;
         private MethodInfo readStdWStringMethod;
@@ -90,10 +90,17 @@ namespace StashUtility
 
         public override void OnDisable()
         {
+            ClearEquipmentRuntimeCaches();
+            equipmentCompiledGroups.Clear();
+            equipmentProcessHandle = null;
         }
 
         public override void OnEnable(bool isGameOpened)
         {
+            ClearEquipmentRuntimeCaches();
+            equipmentCompiledGroups.Clear();
+            equipmentRulesVersion++;
+            equipmentProcessHandle = null;
             hasClearedDumpFile = false;
             if (File.Exists(SettingPathname))
             {
@@ -1109,39 +1116,23 @@ namespace StashUtility
                 ImGui.Indent();
                 if (ImGui.CollapsingHeader(PluginText.T("stashutility.equipment_mod_manager_header", "Equipment Mod Filter Manager")))
                 {
-                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_equipment_great", "Filter Equipment Great Status"), ref Settings.FilterEquipmentGreat)) SaveSettings();
+                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_equipment_great", "Filter Equipment Great Status"), ref Settings.FilterEquipmentGreat)) SaveEquipmentSettings();
                     if (Settings.FilterEquipmentGreat)
                     {
                         ImGui.SameLine();
                         ImGui.SetCursorPosX(300f);
                         ImGui.SetNextItemWidth(150f);
-                        if (ImGui.SliderInt(PluginText.T("stashutility.min_good_equipment_mods", "Min Good Equipment Mods Count"), ref Settings.MinEquipmentGoodMods, 1, 4)) SaveSettings();
+                        if (ImGui.SliderInt(PluginText.T("stashutility.min_good_equipment_mods", "Min Good Equipment Mods Count"), ref Settings.MinEquipmentGoodMods, 1, 4)) SaveEquipmentSettings();
                     }
                     ImGui.Spacing();
 
                     if (ImGui.BeginTabBar("EquipmentCategoryTabs"))
                     {
-                        var categories = new Dictionary<string, Func<Models.EquipmentMod, bool>>
+                        foreach (var cat in EquipmentCategories)
                         {
-                            { "Weapons",     m => m.Category == "Weapons" },
-                            { "Helmets",     m => m.Category == "Helmets" },
-                            { "Body Armour", m => m.Category == "Body Armour" },
-                            { "Gloves",      m => m.Category == "Gloves" },
-                            { "Boots",       m => m.Category == "Boots" },
-                            { "Rings",       m => m.Category == "Rings" },
-                            { "Amulets",     m => m.Category == "Amulets" },
-                            { "Belts",       m => m.Category == "Belts" },
-                            { "Shields",     m => m.Category == "Shields" },
-                            { "Quivers",     m => m.Category == "Quivers" }
-                        };
-
-                        foreach (var kvp in categories)
-                        {
-                            if (ImGui.BeginTabItem(kvp.Key))
+                            if (ImGui.BeginTabItem(cat))
                             {
-                                string cat = kvp.Key;
-                                var allCatMods = Data.ModDatabase.AllEquipmentMods.Where(kvp.Value).ToList();
-                                var allCatOptions = Data.ModDatabase.AllEquipmentModOptions.Where(option => kvp.Value(option.Mods[0])).ToList();
+                                var allCatOptions = GetEquipmentOptions(cat);
 
                                 if (!Settings.EquipmentCategoryGroups.TryGetValue(cat, out var groupList) || groupList == null)
                                 {
@@ -1153,7 +1144,7 @@ namespace StashUtility
                                 if (groupList.Count == 0)
                                 {
                                     var defGroup = new StashUtility.Models.EquipmentGroup { Name = "Default Profile", MinMatchCount = Settings.MinEquipmentGoodModsToHighlight };
-                                    var catModIds = allCatMods.Select(m => m.Id).ToHashSet();
+                                    var catModIds = allCatOptions.SelectMany(option => option.Mods).Select(mod => mod.Id).ToHashSet();
                                     defGroup.ModPatternIds = Settings.EquipmentGoodModPatterns.Where(id => catModIds.Contains(id)).ToList();
                                     foreach (var id in defGroup.ModPatternIds)
                                     {
@@ -1161,13 +1152,13 @@ namespace StashUtility
                                             defGroup.ModRequiredMinRolls[id] = roll;
                                     }
                                     groupList.Add(defGroup);
-                                    SaveSettings();
+                                    SaveEquipmentSettings();
                                 }
 
                                 if (ImGui.Button($"+ Add New Profile Group##add_group_{cat}"))
                                 {
                                     groupList.Add(new StashUtility.Models.EquipmentGroup { Name = $"Profile Group {groupList.Count + 1}", MinMatchCount = 2 });
-                                    SaveSettings();
+                                    SaveEquipmentSettings();
                                 }
                                 ImGui.Separator();
 
@@ -1186,7 +1177,7 @@ namespace StashUtility
                                         if (ImGui.InputText($"Group Name##name_{group.Id}", ref nameBuf, 50))
                                         {
                                             group.Name = nameBuf;
-                                            SaveSettings();
+                                            SaveEquipmentSettings();
                                         }
 
                                         ImGui.SameLine();
@@ -1195,7 +1186,7 @@ namespace StashUtility
                                         if (ImGui.SliderInt($"Min Match##min_{group.Id}", ref minMatch, 1, 6))
                                         {
                                             group.MinMatchCount = minMatch;
-                                            SaveSettings();
+                                            SaveEquipmentSettings();
                                         }
 
                                         if (groupList.Count > 1)
@@ -1204,7 +1195,7 @@ namespace StashUtility
                                             if (ImGui.Button($"Delete Group##del_{group.Id}"))
                                             {
                                                 groupList.RemoveAt(gIdx);
-                                                SaveSettings();
+                                                SaveEquipmentSettings();
                                                 ImGui.Unindent(10f);
                                                 ImGui.PopID();
                                                 break;
@@ -1258,7 +1249,7 @@ namespace StashUtility
                                                 {
                                                     group.ModPatternIds.Add(mod.Id);
                                                 }
-                                                SaveSettings();
+                                                SaveEquipmentSettings();
                                             }
                                             ImGui.EndDisabled();
                                         }
@@ -1370,7 +1361,7 @@ namespace StashUtility
                     group.ModRequiredMinRolls.Remove(mod.Id);
                     group.ModRequiredAverageDamageRolls.Remove(mod.Id);
                 }
-                SaveSettings();
+                SaveEquipmentSettings();
                 ImGui.PopID();
                 ImGui.Separator();
                 return;
@@ -1409,7 +1400,7 @@ namespace StashUtility
                 ImGuiHelper.ToolTip(PluginText.T("stashutility.equipment.multiple_raw", "Multiple or unknown Raw values: no combined slider. Existing conditions are retained."));
             }
 
-            if (settingsChanged) SaveSettings();
+            if (settingsChanged) SaveEquipmentSettings();
             ImGui.Unindent(25f);
             ImGui.PopID();
             ImGui.Separator();
@@ -1556,7 +1547,7 @@ namespace StashUtility
             return false;
         }
 
-        public override void DrawUI()
+        private void DrawOverlayFrame()
         {
             if (!Settings.EnableWaystoneManager && !Settings.EnableTabletManager && !Settings.EnableJewelManager && !Settings.EnableEquipmentManager && !Settings.EnableDebugProbe && !Settings.EnableMerchantPurchasePanel) return;
 
@@ -1853,15 +1844,7 @@ namespace StashUtility
                         if (size.X <= 0f || pos == Vector2.Zero) continue;
 
                         // Scan slot for item entity
-                        var itemAddr = GetItemAddressFromElement(slot);
-                        if (itemAddr != IntPtr.Zero)
-                        {
-                            var item = ReadFreshItem(itemAddr);
-                            if (item != null)
-                            {
-                                EvaluateAndHighlightItem(item, pos, size);
-                            }
-                        }
+                        ProcessItemSlot(slot, pos, size);
                     }
                 }
             }
@@ -1899,15 +1882,7 @@ namespace StashUtility
                     if (size.X <= 0f || pos == Vector2.Zero) continue;
 
                     // Scan slot for item entity
-                    var itemAddr = GetItemAddressFromElement(slot);
-                    if (itemAddr != IntPtr.Zero)
-                    {
-                        var item = ReadFreshItem(itemAddr);
-                        if (item != null)
-                        {
-                            EvaluateAndHighlightItem(item, pos, size);
-                        }
-                    }
+                    ProcessItemSlot(slot, pos, size);
                 }
             }
         }
@@ -1933,15 +1908,7 @@ namespace StashUtility
                 if (size.X <= 0f || pos == Vector2.Zero) continue;
 
                 // Scan slot for item entity
-                var itemAddr = GetItemAddressFromElement(slot);
-                if (itemAddr != IntPtr.Zero)
-                {
-                    var item = ReadFreshItem(itemAddr);
-                    if (item != null)
-                    {
-                        EvaluateAndHighlightItem(item, pos, size);
-                    }
-                }
+                ProcessItemSlot(slot, pos, size);
             }
         }
 
@@ -1992,6 +1959,7 @@ namespace StashUtility
             }
 
             spDebug.ActiveTab = activeTabAddr;
+            TrackEquipmentStashTab(stashTabsContainer, activeTabAddr, activeTabIdx);
             if (activeTabAddr != IntPtr.Zero)
             {
                 spDebug.Status = $"Active tab index {activeTabIdx} ({activeTabType}) at 0x{activeTabAddr.ToInt64():X}";
@@ -2188,6 +2156,7 @@ namespace StashUtility
 
             if (activeTabAddr != IntPtr.Zero)
             {
+                TrackEquipmentStashTab(stashTabsContainer, activeTabAddr, activeTabIdx);
                 // 1. Check if the active tab itself, activeTabAddr -> 0, or activeTabAddr -> 0 -> 0 contains item slots directly.
                 // In coop/controller mode, POE2 often flattens the UI tree layout, rendering item slots directly under the active tab node.
                 bool processedAsGrid = false;
@@ -2442,14 +2411,14 @@ namespace StashUtility
             return false;
         }
 
-        private void EvaluateAndHighlightItem(Item item, Vector2 pos, Vector2 size)
+        private void EvaluateAndHighlightItem(Item item, Vector2 pos, Vector2 size, IntPtr slotAddress)
         {
             if (item == null) return;
 
             var equipmentCategory = EquipmentMatcher.GetCategory(item.Path);
             if (equipmentCategory != null)
             {
-                if (Settings.EnableEquipmentManager) EvaluateAndHighlightEquipment(item, equipmentCategory, pos, size);
+                if (Settings.EnableEquipmentManager) EvaluateAndHighlightEquipment(item, equipmentCategory, pos, size, slotAddress);
                 return;
             }
 
@@ -2961,34 +2930,17 @@ namespace StashUtility
             }
         }
 
-        private void EvaluateAndHighlightEquipment(Item item, string category, Vector2 pos, Vector2 size)
+        private void EvaluateAndHighlightEquipment(Item item, string category, Vector2 pos, Vector2 size, IntPtr slotAddress)
         {
             if (Settings.EnableDebugProbe && !freezeHoveredWaystone &&
                 ImGui.IsMouseHoveringRect(pos, pos + size)) lastHoveredWaystone = item;
 
-            if (Settings.EquipmentCategoryGroups == null ||
-                !Settings.EquipmentCategoryGroups.TryGetValue(category, out var groups) || groups == null ||
-                !groups.Any(group => group?.ModPatternIds?.Count > 0)) return;
+            DrawEquipmentHighlight(RefreshEquipmentMatch(item, category, slotAddress), pos, size);
+        }
 
-            if (!TryReadEquipmentMods(item, out var explicitMods)) return;
-            if (!equipmentOptionsByCategory.TryGetValue(category, out var options))
-            {
-                options = Data.ModDatabase.AllEquipmentModOptions
-                    .Where(option => option.Mods[0].Category == category).ToList();
-                equipmentOptionsByCategory[category] = options;
-            }
-
-            int matchedCount = 0;
-            bool matched = false;
-            foreach (var group in groups)
-            {
-                if (group?.ModPatternIds?.Count is not > 0) continue;
-                int count = EquipmentMatcher.CountMatches(group, options, explicitMods);
-                if (count < Math.Max(1, group.MinMatchCount)) continue;
-                matched = true;
-                matchedCount = Math.Max(matchedCount, count);
-            }
-            if (!matched) return;
+        private void DrawEquipmentHighlight(int matchedCount, Vector2 pos, Vector2 size)
+        {
+            if (matchedCount <= 0) return;
 
             float scale = size.X / 52.0f;
             float margin = Settings.BorderMargin * scale;
@@ -3028,8 +2980,7 @@ namespace StashUtility
                 .ToDictionary(group => group.Key,
                     group => group.Select(mod => mod.StatIds?.Count ?? 0).Distinct().Count() == 1
                         ? group.First().StatIds?.Count ?? 0 : -1, StringComparer.Ordinal);
-            var field = typeof(Entity).GetField("componentAddresses", BindingFlags.Instance | BindingFlags.NonPublic);
-            if (field?.GetValue(item) is not System.Collections.Concurrent.ConcurrentDictionary<string, IntPtr> addresses ||
+            if (EquipmentComponentAddressesField?.GetValue(item) is not System.Collections.Concurrent.ConcurrentDictionary<string, IntPtr> addresses ||
                 !addresses.TryGetValue("Mods", out var address) ||
                 !TryReadMemory<ModsOffsets>(address, out var before) || before.Header.EntityPtr != item.Address ||
                 !TryReadVector(before.Details0.Mods.ExplicitMods, 64, out ModArrayStruct[] entries)) return false;
@@ -3038,14 +2989,7 @@ namespace StashUtility
             foreach (var entry in entries)
             {
                 if (!TryReadVector(entry.Values, 16, out int[] values) || values.Length == 0 ||
-                    !TryReadMemory<IntPtr>(entry.ModsPtr, out var namePtr) || !IsReadableAddress(namePtr)) return false;
-
-                var nameBytes = ReadStdVector<byte>(new StdVector { First = namePtr, Last = namePtr + 256 });
-                if (nameBytes.Length != 256) return false;
-                int nameLength = 0;
-                while (nameLength < 256 && (nameBytes[nameLength] != 0 || nameBytes[nameLength + 1] != 0)) nameLength += 2;
-                if (nameLength == 0 || nameLength == 256) return false;
-                var name = System.Text.Encoding.Unicode.GetString(nameBytes, 0, nameLength);
+                    !TryReadEquipmentModName(entry.ModsPtr, out var name)) return false;
                 if (equipmentRawCounts.TryGetValue(name, out var expectedCount) && expectedCount != values.Length) return false;
                 rawValues.Add(values);
                 mods.Add((name, values.Length == 1 ? (entry.Value0, float.NaN) : (values[0], values[1])));
@@ -3247,6 +3191,7 @@ namespace StashUtility
         private IntPtr GetItemAddressFromElement(IntPtr elementAddr)
         {
             if (elementAddr == IntPtr.Zero) return IntPtr.Zero;
+            if (TryGetCachedItemAddress(elementAddr, out var cachedAddress)) return cachedAddress;
 
             for (int offset = Settings.ScanStartOffset; offset + 8 <= Settings.ScanEndOffset; offset += 8)
             {
@@ -3254,10 +3199,13 @@ namespace StashUtility
                 {
                     if (IsValidItemEntity(cand))
                     {
+                        itemSlotOffsets[elementAddr].Offset = offset;
                         return cand;
                     }
                 }
             }
+            itemSlotOffsets[elementAddr].ProbeAt = Environment.TickCount64 + EquipmentRefreshIntervalMs;
+            equipmentSnapshots.Remove(elementAddr);
             return IntPtr.Zero;
         }
 

@@ -36,27 +36,35 @@ namespace StashUtility.Models
     /// <summary>Combines equivalent properties while keeping every real Mod ID and raw range.</summary>
     public sealed class EquipmentModOption
     {
+        private readonly HashSet<string> gameModIds;
+
         public string Id { get; }
         public string Name { get; }
         public List<EquipmentMod> Mods { get; }
-        public bool UsesAverageDamage => this.Mods.All(IsDamageRange);
-        public float MinRoll => this.Mods.Min(mod => this.UsesAverageDamage
-            ? (mod.RawRollRanges[0].Min / 2f + mod.RawRollRanges[1].Min / 2f) : mod.MinRoll);
-        public float MaxRoll => this.Mods.Max(mod => this.UsesAverageDamage
-            ? (mod.RawRollRanges[0].Max / 2f + mod.RawRollRanges[1].Max / 2f) : mod.MaxRoll);
-        public bool SupportsRoll => this.UsesAverageDamage || this.Mods.All(mod => mod.StatIds?.Count == 1);
+        public bool UsesAverageDamage { get; }
+        public float MinRoll { get; }
+        public float MaxRoll { get; }
+        public bool SupportsRoll { get; }
 
         public EquipmentModOption(string id, IEnumerable<EquipmentMod> mods)
         {
             this.Id = id;
             this.Mods = mods.ToList();
             this.Name = string.IsNullOrWhiteSpace(this.Mods[0].DisplayText) ? this.Mods[0].Name : this.Mods[0].DisplayText;
+            // Database options are immutable after loading; derive their metadata once.
+            this.UsesAverageDamage = this.Mods.All(IsDamageRange);
+            this.SupportsRoll = this.UsesAverageDamage || this.Mods.All(mod => mod.StatIds?.Count == 1);
+            this.MinRoll = this.Mods.Min(mod => this.UsesAverageDamage
+                ? (mod.RawRollRanges[0].Min / 2f + mod.RawRollRanges[1].Min / 2f) : mod.MinRoll);
+            this.MaxRoll = this.Mods.Max(mod => this.UsesAverageDamage
+                ? (mod.RawRollRanges[0].Max / 2f + mod.RawRollRanges[1].Max / 2f) : mod.MaxRoll);
+            this.gameModIds = new HashSet<string>(this.Mods.Select(mod => mod.GameModId), StringComparer.Ordinal);
         }
 
         public bool TryGetRoll(string gameModId, float raw0, float raw1, out double roll)
         {
             roll = 0;
-            if (!this.Mods.Any(mod => string.Equals(mod.GameModId, gameModId, StringComparison.Ordinal)) ||
+            if (!this.gameModIds.Contains(gameModId) ||
                 !this.SupportsRoll || !float.IsFinite(raw0)) return false;
             if (this.UsesAverageDamage)
             {
