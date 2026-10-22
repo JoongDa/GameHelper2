@@ -1,0 +1,59 @@
+{
+  "patch": "0.5.5.4.2",
+  "translations": [
+    "English"
+  ],
+  "tables": [
+    {
+      "name": "Mods",
+      "columns": [
+        "Id",
+        "Domain",
+        "GenerationType",
+        "ModType",
+        "Level",
+        "Families",
+        "SpawnWeight_Tags",
+        "SpawnWeight_Values",
+        "MaxLevel",
+        "IsEssenceOnlyModifier"
+      ]
+    },
+    {
+      "name": "ModType",
+      "columns": [
+        "Name"
+      ]
+    },
+    {
+      "name": "Tags",
+      "columns": [
+        "Id"
+      ]
+    },
+    {
+      "name": "BaseItemTypes",
+      "columns": [
+        "Id",
+        "Name",
+        "ModDomain",
+        "ItemClass",
+        "Tags",
+        "DropLevel"
+      ]
+    },
+    {
+      "name": "ItemClasses",
+      "columns": [
+        "Id",
+        "Name"
+      ]
+    },
+    {
+      "name": "ModFamily",
+      "columns": [
+        "Id"
+      ]
+    }
+  ]
+}

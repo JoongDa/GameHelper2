@@ -29,12 +29,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="Data\equipment_affix_tiers.json" Condition="Exists('Data\equipment_affix_tiers.json')" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Data\jewel_mod_ranges.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
 
   <Target Name="CopyFiles" AfterTargets="Build">
+    <Copy Condition="Exists('$(MSBuildProjectDirectory)\Data\equipment_affix_tiers.json')" SourceFiles="$(MSBuildProjectDirectory)\Data\equipment_affix_tiers.json" DestinationFolder="..\..\GameHelper\$(OutDir)Plugins\$(ProjectName)\Data" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(OutDir)$(TargetName)$(TargetExt);$(OutDir)$(TargetName).pdb;" DestinationFolder="..\..\GameHelper\$(OutDir)Plugins\$(ProjectName)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(MSBuildProjectDirectory)\Data\jewel_mod_ranges.json" DestinationFolder="..\..\GameHelper\$(OutDir)Plugins\$(ProjectName)\Data" SkipUnchangedFiles="true" />
   </Target>

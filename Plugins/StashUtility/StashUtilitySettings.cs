@@ -13,6 +13,10 @@ namespace StashUtility
         public bool DisableBadTabletHighlight = false;
         public bool ShowOverlayInBackground = false;
 
+        // Equipment explicit affix tiers (T1 is best); uses offline data only.
+        public bool EnableEquipmentAffixTierFilter = false;
+        public int MaxEquipmentAffixTier = 3;
+
         // UI path for the waystone stash tab
         public string PathString = "2,0,0,0,1,1,45,0,1";
 

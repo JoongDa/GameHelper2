@@ -10,6 +10,12 @@ StashUtility is a plugin for **GameHelper2** designed to manage, filter, and hig
 
 ## Features
 
+- **Equipment Explicit Affix Tiers**: An optional filter in the existing settings
+  highlights magic/rare equipment if any mapped explicit affix is T1 through the
+  configured maximum tier. It uses the existing good border style and color.
+  The hovered-item inspector displays mapped mod levels and tiers. Missing data,
+  bases, and Mod IDs remain Unknown and never trigger this filter.
+
 - **Waystone & Tablet Integration**: Automatically detects, parses, and highlights qualifying Waystones and Tablets inside active stash tabs (standard/quad/waystone layouts) and your character's inventory.
 - **Granular Waystone Filter Criteria**:
   - **Min Tier**: Only highlight waystones equal to or above a specified tier (T1–T16).
@@ -69,6 +75,71 @@ StashUtility is a plugin for **GameHelper2** designed to manage, filter, and hig
    - By default, the path is set to `2,0,0,0,1,1,45,0,1`. You can customize the path indices to match UI changes.
 
 ---
+
+### Generating equipment affix tiers
+
+The bundled snapshot was extracted from the official PoE2 patch CDN version
+`0.5.5.4.2` on 2026-10-22. It covers 1,836 equipment bases and 2,586 eligible mod
+levels in 70 deduplicated affix pools (about 0.5 MB). Input hashes, source details
+and validation results are in `Data/equipment_affix_tiers.provenance.json`.
+The plugin does not verify the attached client's version: use matching game data.
+
+To refresh, use `pathofexile-dat@16.0.1` in a separate working directory and the
+included `affix_tables.config.json` (update its patch version first). It downloads
+the required tables directly from the official patch server; no local game
+installation is needed. For example, from a scratch extraction directory:
+
+```powershell
+npm install --no-save --ignore-scripts pathofexile-dat@16.0.1
+# Copy StashUtility/affix_tables.config.json here as config.json first.
+node ./node_modules/pathofexile-dat/dist/cli/run.js
+```
+
+This produces `tables/English/Mods.json`, `ModType.json`, `Tags.json`,
+`BaseItemTypes.json`, `ItemClasses.json` and `ModFamily.json`. Preserve table row
+order and indices. The last table is retained for comparison with family-based
+rankings; the selected toolkit algorithm groups by ModType.
+
+From `Plugins/StashUtility`, run (replace the version and input directory):
+
+```powershell
+python -B generate_affix_tiers.py --tables C:/poe2-tables/English --source-version YOUR_GAME_DATA_VERSION --source-url YOUR_PATCH_CDN_URL --out Data/equipment_affix_tiers.json
+```
+
+If you already have poe2-toolkit's keyed `mods.json`, pass `--mods C:/exports/mods.json`.
+Then only `Tags.json`, `BaseItemTypes.json` and `ItemClasses.json` are needed in
+`--tables`. Toolkit's item export is keyed by localized display names, so it is
+not used for runtime identity: the generator retains exact `BaseItemTypes.Id`.
+
+The offline generator references [poe2-toolkit/buildMods.ts](https://github.com/rajtik76/poe2-toolkit/blob/main/packages/poe2-mod-extractor/src/buildMods.ts)
+and its [item tag contract](https://github.com/rajtik76/poe2-toolkit/blob/main/packages/poe2-item-extractor/src/buildItems.ts).
+It keeps `Domain=Item`, prefix/suffix and `ModType` separation and FIRST matching
+spawn tag semantics (zero blocks). It deliberately ignores upstream `tier` and
+Mod ID numeric suffixes: distinct levels are ranked descending, T1 best, AFTER
+filtering for a base's effective tags. Base drop level does not truncate the
+ladder. Identical ranked pools share a lookup profile. This is a derived toolkit
+ranking, not a claim that every exceptional mod matches the game's display or
+PoE2DB's family-based grouping. Validate representative items when updating data.
+
+For the bundled snapshot, all 125 normal affix entries for Bound Sandals
+(`Metadata/Items/Armours/Boots/FourBootsInt2Endgame`) match PoE2DB's intelligence
+boots pool by generation type, first family and level, and all 125 computed tiers
+agree. The screenshot's four IDs yield: IncreasedLife8 L54/T2, Intelligence6
+L55/T3, FireResist5 L48/T4, IncreasedMana5 L33/T5. At maximum T3, the first two
+match. This is an offline comparison, not a live-client test.
+
+Other pools contain different ModTypes sharing an exclusion family (e.g. life
+and mana flask recovery or different spell-gem levels). Merging them by family
+can give different tiers. This feature retains the selected toolkit ModType
+classification; the bundled provenance records that limitation.
+
+Build the whole `GameOverlay.sln`; the generated JSON is staged beside the plugin.
+Alternatively put it in the running plugin's `Data` directory and use **Reload
+Affix Tier Data**. The UI shows its declared source version; it does not detect
+the attached client's data version. Regenerate when the game tables change.
+The filter defaults to off. Without a generated dataset it reports data not ready.
+
+Offline regressions: `python -m unittest test_affix_tiers.py`.
 
 ## Building from Source
 
