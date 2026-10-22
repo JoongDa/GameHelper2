@@ -1,0 +1,67 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <Version>0.5.5</Version>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <NoWarn>1701;1702; 1591</NoWarn>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Sim\ is the offline route-planner harness (Sim/ExpeditionSim.csproj). It compiles THESE sources into
+         a console app, so its own files must stay out of the shipped plugin. -->
+    <Compile Remove="Sim\**" />
+    <None Remove="Sim\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\GameHelper\GameHelper.csproj">
+      <Private>false</Private>
+      <CopyLocalSatelliteAssemblies>false</CopyLocalSatelliteAssemblies>
+    </ProjectReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Recipe data built by build_recipes_json.py from game_dat/. Bundled with the plugin. -->
+    <Content Include="expedition2_recipes.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- English display names for ExpeditionRelic buff mods, keyed by language-independent mod Id. Edit freely. -->
+    <Content Include="relic_mods_en.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Reward-marker icons sliced from the game minimap sheet by extract_minimap_icons.py. -->
+    <Content Include="icons\**\*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>icons\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Content>
+    <!-- UI localization dictionaries (<lang-code>.json). Read at runtime via GameHelper's PluginLocalization
+         from <plugin>/Localization by the selected UI language (OverlayLocalization.CurrentLanguage). -->
+    <Content Include="Localization\**\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Localization\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="CopyFiles" AfterTargets="Build">
+    <Copy SourceFiles="$(OutDir)$(TargetName)$(TargetExt);$(OutDir)$(TargetName).pdb;$(OutDir)expedition2_recipes.json;$(OutDir)relic_mods_en.json;" DestinationFolder="..\..\GameHelper\$(OutDir)Plugins\$(ProjectName)" SkipUnchangedFiles="true" />
+    <ItemGroup>
+      <RewardIconFiles Include="$(OutDir)icons\**\*.png" />
+      <LocalizationFiles Include="$(OutDir)Localization\**\*.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(RewardIconFiles)" DestinationFolder="..\..\GameHelper\$(OutDir)Plugins\$(ProjectName)\icons\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(LocalizationFiles)" DestinationFolder="..\..\GameHelper\$(OutDir)Plugins\$(ProjectName)\Localization\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>
