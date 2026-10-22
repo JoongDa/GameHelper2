@@ -1,0 +1,305 @@
+// <copyright file="BaselineHarness.cs" company="None">
+// Copyright (c) None. All rights reserved.
+// </copyright>
+
+using System.Collections.Concurrent;
+using System.Numerics;
+using System.Runtime.CompilerServices;
+using GameHelper.RemoteObjects.States.InGameStateObjects;
+using GameOffsets.Natives;
+using GameOffsets.Objects.Components;
+using StashUtility;
+using StashUtility.Models;
+
+internal static class Program
+{
+    private static void Main(string[] args)
+    {
+        MatcherRegression.Run();
+        int slots = args.Length == 0 ? 144 : int.Parse(args[0]);
+        StashUtilityCore.RunBaseline(slots);
+    }
+}
+
+namespace GameHelper.RemoteEnums
+{
+    public enum GameStateTypes { InGameState, AreaLoadingState, LoadingState, GameNotLoaded, LoginState, SelectCharacterState }
+}
+
+namespace GameHelper
+{
+    public static class Core
+    {
+        public static FakeProcess Process { get; } = new();
+        public static FakeStates States { get; } = new();
+    }
+
+    public sealed class FakeProcess { public object Handle { get; } = new(); }
+    public sealed class FakeStates
+    {
+        public FakeInGameState InGameStateObject { get; } = new();
+        public RemoteEnums.GameStateTypes GameCurrentState { get; set; } = RemoteEnums.GameStateTypes.InGameState;
+    }
+    public sealed class FakeInGameState { public FakeArea CurrentAreaInstance { get; } = new(); }
+    public sealed class FakeArea { public IntPtr Address => new(0x01000000); public string AreaHash => "test-area"; }
+}
+
+namespace GameHelper.RemoteObjects.States.InGameStateObjects
+{
+    public class Entity
+    {
+        private readonly ConcurrentDictionary<string, IntPtr> componentAddresses = new(StringComparer.Ordinal);
+        protected void SetMods(IntPtr address) => this.componentAddresses["Mods"] = address;
+    }
+
+    public sealed class Item : Entity
+    {
+        public static long Constructions;
+        public IntPtr Address { get; }
+        public bool IsValid => true;
+        public string Path => "Metadata/Items/Rings/TestRing";
+        private Item(IntPtr address)
+        {
+            Constructions++;
+            this.Address = address;
+            this.SetMods(new IntPtr(FakeMemory.ModsBase + address.ToInt64() - FakeMemory.ItemBase));
+        }
+    }
+}
+
+namespace StashUtility.Data
+{
+    public static class ModDatabase
+    {
+        public static readonly List<EquipmentMod> AllEquipmentMods = new()
+        {
+            new("single", "Single stat")
+            {
+                Category = "Rings", GameModId = "Single1", PropertyId = "single",
+                StatIds = new() { "one" }, MinRoll = 0, MaxRoll = 100,
+            },
+        };
+        public static readonly List<EquipmentModOption> AllEquipmentModOptions = new()
+        {
+            new("single", AllEquipmentMods),
+        };
+    }
+}
+
+namespace StashUtility
+{
+    internal static class BaselineClock { internal static long TickCount64 = 1000; }
+
+    internal static class FakeMemory
+    {
+        internal const long SlotBase = 0x10000000;
+        internal const long ItemBase = 0x20000000;
+        internal const long DetailsBase = 0x30000000;
+        internal const long ModsBase = 0x40000000;
+        internal const long EntriesBase = 0x50000000;
+        internal const long ValuesBase = 0x60000000;
+        internal const long ModRow = 0x70000000;
+        internal const long ModName = 0x71000000;
+        internal const int Stride = 0x1000;
+        internal static int Slots;
+        internal static bool Occupied = true;
+        internal static long SlotPointerReads;
+        internal static long EntityPointerReads;
+        internal static long OtherPointerReads;
+        internal static long MetadataStructReads;
+        internal static long MetadataStringReads;
+        internal static long ModsHeaderReads;
+        internal static long VectorReads;
+
+        internal static void Reset()
+        {
+            SlotPointerReads = EntityPointerReads = OtherPointerReads = MetadataStructReads = 0;
+            MetadataStringReads = ModsHeaderReads = VectorReads = Item.Constructions = 0;
+        }
+    }
+
+    public abstract class FakePlugin { public abstract void DrawUI(); }
+
+    public sealed class FakeSettings
+    {
+        public bool EnableEquipmentManager = true;
+        public bool EnableDebugProbe;
+        public int ScanStartOffset = 0x100;
+        public int ScanEndOffset = 0x180;
+        public Dictionary<string, List<EquipmentGroup>> EquipmentCategoryGroups = new()
+        {
+            ["Rings"] = new() { new() { MinMatchCount = 1, ModPatternIds = new() { "single" } } },
+        };
+    }
+
+    public sealed partial class StashUtilityCore : FakePlugin
+    {
+        private readonly FakeSettings Settings = new();
+        private readonly Dictionary<string, List<EquipmentModOption>> equipmentOptionsByCategory = new(StringComparer.Ordinal);
+        private Dictionary<string, int> equipmentRawCounts;
+        private object handleObj;
+
+        internal static void RunBaseline(int slots)
+        {
+            FakeMemory.Slots = slots;
+            FakeMemory.Occupied = true;
+            // Warm reflection, generic readers, and matcher code before measuring allocations.
+            var warm = new StashUtilityCore();
+            warm.DrawUI();
+            warm.DrawUI();
+            BaselineClock.TickCount64 += 100;
+            warm.DrawUI();
+
+            var plugin = new StashUtilityCore();
+            BaselineClock.TickCount64 = 1000;
+            Measure("occupied cold frame", plugin, 1);
+            var hit = Measure("occupied stable hit (per frame)", plugin, 100);
+            Require("stable hit still validates metadata for every slot", hit.Metadata == slots);
+            Require("stable hit avoids constructing Item", hit.Items == 0);
+            Require("stable hit reads slot and entity pointers", hit.Pointers >= 2L * slots);
+
+            BaselineClock.TickCount64 = 1100;
+            var expired = Measure("all occupied slots expire at 100ms", plugin, 1);
+            Require("100ms batch reconstructs every Item", expired.Items == slots);
+            Require("100ms batch rereads every Mods component", expired.ModHeaders == 2L * slots);
+
+            FakeMemory.Occupied = false;
+            var empty = new StashUtilityCore();
+            BaselineClock.TickCount64 = 2000;
+            Measure("empty cold frame", empty, 1);
+            var emptyHit = Measure("empty stable hit (per frame)", empty, 100);
+            Require("empty negative cache avoids scanning before expiry", emptyHit.Pointers == 0);
+            BaselineClock.TickCount64 = 2100;
+            var emptyExpired = Measure("all empty slots expire at 100ms", empty, 1);
+            Require("empty batch repeats every configured offset", emptyExpired.Pointers == slots * 16L);
+            Console.WriteLine("Original baseline invariants: PASS.");
+            Console.WriteLine("Counters use original baseline methods with fake memory and a deterministic clock.");
+            Console.WriteLine("Managed bytes are simulated harness allocations, not a live-game benchmark; Item internals and read transport are stubbed.");
+        }
+
+        private static (long Metadata, long Items, long Pointers, long ModHeaders) Measure(string scenario, StashUtilityCore plugin, int frames)
+        {
+            FakeMemory.Reset();
+            long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+            for (int frame = 0; frame < frames; frame++) plugin.DrawUI();
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
+            long pointers = FakeMemory.SlotPointerReads + FakeMemory.EntityPointerReads + FakeMemory.OtherPointerReads;
+            Console.WriteLine($"{scenario}: metadata strings={FakeMemory.MetadataStringReads / frames}, " +
+                $"metadata structs={FakeMemory.MetadataStructReads / frames}, pointer reads={pointers / frames} " +
+                $"(slot={FakeMemory.SlotPointerReads / frames}, entity={FakeMemory.EntityPointerReads / frames}, other={FakeMemory.OtherPointerReads / frames}), " +
+                $"Item={Item.Constructions / frames}, Mods headers={FakeMemory.ModsHeaderReads / frames}, " +
+                $"vector arrays={FakeMemory.VectorReads / frames}, managed bytes={allocated / frames}.");
+            return (FakeMemory.MetadataStringReads / frames, Item.Constructions / frames, pointers / frames, FakeMemory.ModsHeaderReads / frames);
+        }
+
+        private static void Require(string scenario, bool passed)
+        {
+            if (!passed) throw new InvalidOperationException($"Original baseline invariant failed: {scenario}.");
+        }
+
+        private bool InitReflection() => true;
+        private void SaveSettings() { }
+        private void DrawOverlayFrame()
+        {
+            for (int i = 0; i < FakeMemory.Slots; i++)
+                this.ProcessItemSlot(new IntPtr(FakeMemory.SlotBase + i * FakeMemory.Stride), Vector2.Zero, Vector2.One);
+        }
+        private void DrawEquipmentHighlight(int count, Vector2 position, Vector2 size) { }
+        private void EvaluateAndHighlightItem(Item item, Vector2 position, Vector2 size, IntPtr slot) =>
+            this.DrawEquipmentHighlight(this.RefreshEquipmentMatch(item, "Rings", slot), position, size);
+        private static bool IsReadableAddress(IntPtr address) => address.ToInt64() >= 0x10000;
+
+        private static bool TryReadMemory<T>(IntPtr address, out T result) where T : unmanaged
+        {
+            result = default;
+            long value = address.ToInt64();
+            if (typeof(T) == typeof(IntPtr))
+            {
+                IntPtr pointer = IntPtr.Zero;
+                if (value >= FakeMemory.SlotBase && value < FakeMemory.SlotBase + FakeMemory.Slots * FakeMemory.Stride)
+                {
+                    FakeMemory.SlotPointerReads++;
+                    long offset = value - FakeMemory.SlotBase;
+                    if (FakeMemory.Occupied && offset % FakeMemory.Stride == 0x100)
+                        pointer = new(FakeMemory.ItemBase + offset - 0x100);
+                }
+                else if (value >= FakeMemory.ItemBase && value < FakeMemory.ItemBase + FakeMemory.Slots * FakeMemory.Stride)
+                {
+                    FakeMemory.EntityPointerReads++;
+                    pointer = new(FakeMemory.DetailsBase + value - FakeMemory.ItemBase - 8);
+                }
+                else
+                {
+                    FakeMemory.OtherPointerReads++;
+                    if (value == FakeMemory.ModRow) pointer = new(FakeMemory.ModName);
+                }
+                result = Unsafe.As<IntPtr, T>(ref pointer);
+                return true;
+            }
+            if (typeof(T) == typeof(StdWString))
+            {
+                FakeMemory.MetadataStructReads++;
+                StdWString container = new() { Buffer = new(0x72000000), Length = 29, Capacity = 29 };
+                result = Unsafe.As<StdWString, T>(ref container);
+                return true;
+            }
+            if (typeof(T) == typeof(ModsOffsets))
+            {
+                FakeMemory.ModsHeaderReads++;
+                long itemOffset = value - FakeMemory.ModsBase;
+                var vector = new StdVector { First = new(FakeMemory.EntriesBase + itemOffset), Last = new(FakeMemory.EntriesBase + itemOffset + 0x40) };
+                var mods = new ModsOffsets
+                {
+                    Header = new ComponentHeader { EntityPtr = new(FakeMemory.ItemBase + itemOffset) },
+                    Details0 = new ModsAndObjectMagicProperties { Rarity = 2, Mods = new AllModsType { ExplicitMods = vector } },
+                };
+                // Header and Details0 overlap in the actual struct layout.
+                mods.Header.EntityPtr = new(FakeMemory.ItemBase + itemOffset);
+                result = Unsafe.As<ModsOffsets, T>(ref mods);
+                return true;
+            }
+            return false;
+        }
+
+        private static string ReadStdWString(StdWString container)
+        {
+            FakeMemory.MetadataStringReads++;
+            return "Metadata/Items/Rings/TestRing";
+        }
+
+        private static bool TryReadVector<T>(StdVector vector, int maximum, out T[] values) where T : unmanaged
+        {
+            FakeMemory.VectorReads++;
+            if (typeof(T) == typeof(ModArrayStruct))
+            {
+                long itemOffset = vector.First.ToInt64() - FakeMemory.EntriesBase;
+                var entries = new[]
+                {
+                    new ModArrayStruct
+                    {
+                        ModsPtr = new(FakeMemory.ModRow), Value0 = 10,
+                        Values = new StdVector { First = new(FakeMemory.ValuesBase + itemOffset), Last = new(FakeMemory.ValuesBase + itemOffset + 4) },
+                    },
+                };
+                values = Unsafe.As<ModArrayStruct[], T[]>(ref entries);
+                return true;
+            }
+            if (typeof(T) == typeof(int))
+            {
+                var raw = new[] { 10 };
+                values = Unsafe.As<int[], T[]>(ref raw);
+                return true;
+            }
+            values = Array.Empty<T>();
+            return false;
+        }
+
+        private static T[] ReadStdVector<T>(StdVector vector) where T : unmanaged
+        {
+            if (typeof(T) != typeof(byte)) return Array.Empty<T>();
+            var bytes = new byte[256];
+            System.Text.Encoding.Unicode.GetBytes("Single1").CopyTo(bytes, 0);
+            return Unsafe.As<byte[], T[]>(ref bytes);
+        }
+    }
+}

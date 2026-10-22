@@ -1,0 +1,128 @@
+// <copyright file="MatcherRegression.cs" company="None">
+// Copyright (c) None. All rights reserved.
+// </copyright>
+
+using StashUtility;
+using StashUtility.Models;
+
+internal static class MatcherRegression
+{
+    private static int assertions;
+
+    internal static void Run()
+    {
+        var tier1 = Single("tier1", "Single1", "life", "life_stat");
+        var tier2 = Single("tier2", "Single2", "life", "life_stat");
+        var resistance = Single("res", "Resistance", "resistance", "resistance_stat");
+        var speed = Single("speed", "Speed", "speed", "speed_stat");
+        var life = new EquipmentModOption("life", new[] { tier1, tier2 });
+        var res = new EquipmentModOption("resistance", new[] { resistance });
+        var spd = new EquipmentModOption("speed", new[] { speed });
+        var options = new[] { life, res, spd };
+        var bothTiers = Group(1, "tier1", "tier2");
+        Expect("PropertyId merges variants", 1, Count(bothTiers, options, Mod("Single1", 10), Mod("Single2", 10)));
+        Expect("Duplicate modifiers count once", 1, Count(bothTiers, options, Mod("Single1", 10), Mod("Single1", 10)));
+        Expect("Saved variant scope is preserved", 0, Count(Group(1, "tier1"), options, Mod("Single2", 10)));
+        Expect("Exact GameModId is required", 0, Count(bothTiers, options, Mod("Single1Suffix", 10)));
+        Expect("GameModId comparison is ordinal", 0, Count(bothTiers, options, Mod("single1", 10)));
+
+        var raw = Group(1, "tier1");
+        raw.ModRequiredMinRolls["tier1"] = 10;
+        Expect("Raw below threshold", 0, Count(raw, options, Mod("Single1", 9)));
+        Expect("Raw inclusive threshold", 1, Count(raw, options, Mod("Single1", 10)));
+        Expect("Raw above threshold", 1, Count(raw, options, Mod("Single1", 11)));
+        Expect("Raw NaN fails", 0, Count(raw, options, Mod("Single1", float.NaN)));
+        Expect("Raw infinity fails", 0, Count(raw, options, Mod("Single1", float.PositiveInfinity)));
+        raw.ModRequiredMinRolls["tier1"] = float.NaN;
+        Expect("Saved NaN threshold fails", 0, Count(raw, options, Mod("Single1", 10)));
+
+        var damage = new EquipmentMod("damage", "Added cold damage")
+        {
+            GameModId = "Damage", PropertyId = "cold", Category = "Rings",
+            StatIds = new() { "attack_minimum_added_cold_damage", "attack_maximum_added_cold_damage" },
+            RawRollRanges = new()
+            {
+                new() { StatId = "attack_minimum_added_cold_damage", Min = 1, Max = 20 },
+                new() { StatId = "attack_maximum_added_cold_damage", Min = 2, Max = 40 },
+            },
+        };
+        var damageOption = new EquipmentModOption("cold", new[] { damage });
+        var damageOptions = new[] { damageOption };
+        var average = Group(1, "damage");
+        average.ModRequiredAverageDamageRolls["damage"] = 5.5f;
+        Expect("Average inclusive half roll", 1, Count(average, damageOptions, Mod("Damage", 3, 8)));
+        average.ModRequiredAverageDamageRolls["damage"] = 5.6f;
+        Expect("Average below threshold", 0, Count(average, damageOptions, Mod("Damage", 3, 8)));
+        average.ModRequiredAverageDamageRolls["damage"] = 0;
+        Expect("Reversed endpoints fail", 0, Count(average, damageOptions, Mod("Damage", 8, 3)));
+        Expect("Missing endpoint fails", 0, Count(average, damageOptions, Mod("Damage", 3, float.NaN)));
+        Expect("Infinite endpoint fails", 0, Count(average, damageOptions, Mod("Damage", 3, float.PositiveInfinity)));
+        var incompatibleDamage = Group(1, "damage");
+        incompatibleDamage.ModRequiredMinRolls["damage"] = 1;
+        Expect("Damage cannot use legacy raw threshold", 0, Count(incompatibleDamage, damageOptions, Mod("Damage", 3, 8)));
+        var incompatibleSingle = Group(1, "tier1");
+        incompatibleSingle.ModRequiredAverageDamageRolls["tier1"] = 1;
+        Expect("Single stat cannot use average threshold", 0, Count(incompatibleSingle, options, Mod("Single1", 10)));
+
+        var hybrid = Single("hybrid", "Hybrid", "hybrid", "one");
+        hybrid.StatIds.Add("two");
+        var hybridOptions = new[] { new EquipmentModOption("hybrid", new[] { hybrid }) };
+        var hybridGroup = Group(1, "hybrid");
+        Expect("Non-damage multistat presence", 1, Count(hybridGroup, hybridOptions, Mod("Hybrid", 1, 2)));
+        Expect("Multistat incomplete vector fails", 0, Count(hybridGroup, hybridOptions, Mod("Hybrid", 1, float.NaN)));
+        hybridGroup.ModRequiredMinRolls["hybrid"] = 1;
+        Expect("Unsupported multistat conversion fails", 0, Count(hybridGroup, hybridOptions, Mod("Hybrid", 1, 2)));
+
+        var profileA = EquipmentMatcher.Compile(Group(2, "tier1", "res"), options);
+        var profileB = EquipmentMatcher.Compile(Group(2, "tier1", "speed"), options);
+        var profileC = EquipmentMatcher.Compile(Group(2, "tier1", "res", "speed"), options);
+        Expect("At least N rejects partial profile", 0, Highlight(new[] { profileA }, Mod("Single1", 10)));
+        Expect("At least N accepts equal count", 2, Highlight(new[] { profileA }, Mod("Single1", 10), Mod("Resistance", 10)));
+        Expect("Profiles do not combine partial matches", 0, Highlight(new[] { profileA, profileB }, Mod("Resistance", 10), Mod("Speed", 10)));
+        Expect("Any qualifying profile can highlight", 2, Highlight(new[] { profileA, profileB }, Mod("Single1", 10), Mod("Speed", 10)));
+        Expect("Maximum qualifying count is retained", 3, Highlight(new[] { profileA, profileC }, Mod("Single1", 10), Mod("Resistance", 10), Mod("Speed", 10)));
+
+        var compiled = EquipmentMatcher.Compile(bothTiers, options);
+        Expect("Sequential first item", 1, EquipmentMatcher.CountMatches(compiled, new[] { Mod("Single1", 10) }));
+        Expect("Empty next item", 0, EquipmentMatcher.CountMatches(compiled, Array.Empty<(string, (float, float))>()));
+        Expect("Previous match does not leak", 0, EquipmentMatcher.CountMatches(compiled, new[] { Mod("Unknown", 10) }));
+        Expect("Group remains reusable", 1, EquipmentMatcher.CountMatches(compiled, new[] { Mod("Single2", 10) }));
+        Expect("Empty rules", 0, Count(Group(1), options, Mod("Single1", 10)));
+        Expect("Null modifiers", 0, EquipmentMatcher.CountMatches(compiled, null));
+        Expect("Minimum count is clamped", 1, EquipmentMatcher.Compile(Group(0, "tier1"), options).MinMatchCount);
+        Console.WriteLine($"Matcher regression: PASS ({assertions} assertions, current production matcher/models).");
+    }
+
+    private static EquipmentMod Single(string id, string gameId, string property, string stat) => new(id, id)
+    {
+        GameModId = gameId, PropertyId = property, Category = "Rings", StatIds = new() { stat },
+        MinRoll = 0, MaxRoll = 100,
+    };
+
+    private static EquipmentGroup Group(int min, params string[] ids) => new()
+    {
+        MinMatchCount = min, ModPatternIds = ids.ToList(),
+    };
+
+    private static (string name, (float v0, float v1) vals) Mod(string name, float first, float second = float.NaN) => (name, (first, second));
+
+    private static int Count(EquipmentGroup group, EquipmentModOption[] options, params (string name, (float v0, float v1) vals)[] mods) =>
+        EquipmentMatcher.CountMatches(EquipmentMatcher.Compile(group, options), mods);
+
+    private static int Highlight(EquipmentMatcher.CompiledGroup[] groups, params (string name, (float v0, float v1) vals)[] mods)
+    {
+        int result = 0;
+        foreach (var group in groups)
+        {
+            int count = EquipmentMatcher.CountMatches(group, mods);
+            if (count >= group.MinMatchCount) result = Math.Max(result, count);
+        }
+        return result;
+    }
+
+    private static void Expect(string scenario, int expected, int actual)
+    {
+        assertions++;
+        if (expected != actual) throw new InvalidOperationException($"{scenario}: expected {expected}, actual {actual}.");
+    }
+}

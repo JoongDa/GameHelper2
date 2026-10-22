@@ -1,0 +1,80 @@
+// <copyright file="PersistenceRegression.cs" company="None">
+// Copyright (c) None. All rights reserved.
+// </copyright>
+
+namespace PersistenceRegression
+{
+    using System;
+    using System.Collections.Generic;
+    using System.IO;
+    using Newtonsoft.Json;
+
+    internal static class PersistenceClock { internal static long TickCount64; }
+
+    public sealed partial class PersistenceProbe
+    {
+        private readonly Dictionary<string, int> Settings = new() { ["value"] = 1 };
+        private readonly string SettingPathname = Path.Combine(AppContext.BaseDirectory, "settings-test", "settings.txt");
+        private bool equipmentDiagnosticsEnabled = true;
+        private Counters equipmentPerformance;
+        private struct Counters { internal int SettingsWrites; }
+        private static int assertions;
+
+        internal static void Run()
+        {
+            var probe = new PersistenceProbe();
+            PersistenceClock.TickCount64 = 1000;
+            probe.RequestSettingsSave();
+            PersistenceClock.TickCount64 = 1499;
+            probe.FlushPendingSettings();
+            Check(!File.Exists(probe.SettingPathname));
+            PersistenceClock.TickCount64 = 1500;
+            probe.FlushPendingSettings();
+            Check(Read(probe) == 1 && !probe.settingsSavePending);
+            int writes = probe.equipmentPerformance.SettingsWrites;
+            for (int index = 0; index < 600; index++)
+            {
+                PersistenceClock.TickCount64++;
+                probe.Settings["value"] = index;
+                probe.RequestSettingsSave();
+                probe.FlushPendingSettings();
+            }
+            Check(probe.equipmentPerformance.SettingsWrites == writes);
+            PersistenceClock.TickCount64 += 500;
+            probe.FlushPendingSettings();
+            Check(Read(probe) == 599 && probe.equipmentPerformance.SettingsWrites == writes + 1);
+            probe.RequestSettingsSave();
+            PersistenceClock.TickCount64 += 2000;
+            probe.RequestSettingsSave();
+            probe.FlushPendingSettings();
+            Check(!probe.settingsSavePending);
+            probe.Settings["value"] = 700;
+            probe.RequestSettingsSave();
+            probe.PersistSettings();
+            Check(Read(probe) == 700 && !probe.settingsSavePending);
+            using (var locked = new FileStream(probe.SettingPathname, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                probe.Settings["value"] = 800;
+                probe.RequestSettingsSave();
+                probe.PersistSettings();
+                Check(probe.settingsSavePending && Read(probe) == 700);
+                long retryAt = probe.settingsRetryAt;
+                PersistenceClock.TickCount64 = retryAt - 1;
+                probe.FlushPendingSettings();
+                Check(probe.settingsRetryAt == retryAt && probe.settingsSavePending);
+            }
+            PersistenceClock.TickCount64 += 1;
+            probe.FlushPendingSettings();
+            Check(Read(probe) == 800 && !probe.settingsSavePending && !File.Exists(probe.SettingPathname + ".tmp"));
+            Console.WriteLine($"Persistence regression: PASS ({assertions} assertions, actual production persistence partial).");
+        }
+
+        private static int Read(PersistenceProbe probe) =>
+            JsonConvert.DeserializeObject<Dictionary<string, int>>(File.ReadAllText(probe.SettingPathname))["value"];
+        private static void Check(bool passed)
+        {
+            assertions++;
+            if (!passed) throw new InvalidOperationException("Settings persistence regression failed.");
+        }
+    }
+}

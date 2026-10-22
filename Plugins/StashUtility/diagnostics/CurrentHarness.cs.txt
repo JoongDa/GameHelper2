@@ -1,0 +1,508 @@
+// <copyright file="CurrentHarness.cs" company="None">
+// Copyright (c) None. All rights reserved.
+// </copyright>
+
+using System.Collections.Concurrent;
+using System.Numerics;
+using System.Runtime.CompilerServices;
+using GameHelper.RemoteObjects.States.InGameStateObjects;
+using GameOffsets.Natives;
+using GameOffsets.Objects.Components;
+using GameOffsets.Objects.States.InGameState;
+using GameOffsets.Objects.UiElement;
+using StashUtility;
+using StashUtility.Models;
+
+internal static class Program
+{
+    private static void Main(string[] args)
+    {
+        int slots = args.Length == 0 ? 144 : int.Parse(args[0]);
+        StashUtilityCore.RunCurrent(slots);
+        BindingRegression.ReaderProbe.Run();
+        PersistenceRegression.PersistenceProbe.Run();
+    }
+}
+
+namespace GameHelper.RemoteEnums
+{
+    public enum GameStateTypes { InGameState, AreaLoadingState, LoadingState, GameNotLoaded, LoginState, SelectCharacterState }
+}
+namespace GameOffsets
+{
+    public static class Util
+    {
+        public static bool isBitSetByte(byte value, int bit) => (value & (1 << bit)) != 0;
+        public static bool isBitSetUint(uint value, int bit) => (value & (1u << bit)) != 0;
+    }
+}
+namespace GameHelper
+{
+    public static class Core
+    {
+        public static FakeProcess Process { get; } = new();
+        public static FakeStates States { get; } = new();
+    }
+    public sealed class FakeProcess { public object Handle { get; set; } = new(); }
+    public sealed class FakeStates
+    {
+        public FakeInGameState InGameStateObject { get; } = new();
+        public RemoteEnums.GameStateTypes GameCurrentState { get; set; } = RemoteEnums.GameStateTypes.InGameState;
+    }
+    public sealed class FakeInGameState { public FakeArea CurrentAreaInstance { get; } = new(); }
+    public sealed class FakeArea { public IntPtr Address { get; set; } = new(0x01000000); public string AreaHash { get; set; } = "test-area"; }
+}
+namespace GameHelper.RemoteObjects.UiElement
+{
+    public class UiElementBase
+    {
+        public Vector2 Position => Vector2.One;
+        public Vector2 Size => new(40, 40);
+    }
+}
+namespace GameHelper.Plugin
+{
+    public static class PluginUiElementReflection
+    {
+        public static object CreateUiElement(IntPtr slot, object parents) => new GameHelper.RemoteObjects.UiElement.UiElementBase();
+    }
+}
+namespace GameHelper.RemoteObjects.States.InGameStateObjects
+{
+    public class Entity
+    {
+        private readonly ConcurrentDictionary<string, IntPtr> componentAddresses = new(StringComparer.Ordinal);
+        protected void SetMods(IntPtr address) => this.componentAddresses["Mods"] = address;
+    }
+    public sealed class Item : Entity
+    {
+        public static long Constructions;
+        public IntPtr Address { get; }
+        public bool IsValid => true;
+        public string Path => FakeMemory.MetadataPath;
+        private Item(IntPtr address)
+        {
+            Constructions++;
+            this.Address = address;
+            this.SetMods(new IntPtr(FakeMemory.ModsBase + address.ToInt64() - FakeMemory.ItemBase));
+        }
+    }
+}
+namespace StashUtility.Data
+{
+    public static class ModDatabase
+    {
+        public static readonly List<EquipmentMod> AllEquipmentMods = new()
+        {
+            new("single", "Single stat")
+            {
+                Category = "Rings", GameModId = "Single1", PropertyId = "single",
+                StatIds = new() { "one" }, MinRoll = 0, MaxRoll = 100,
+            },
+        };
+        public static readonly List<EquipmentModOption> AllEquipmentModOptions = new() { new("single", AllEquipmentMods) };
+    }
+}
+namespace StashUtility
+{
+    internal static class BaselineClock { internal static long TickCount64 = 1000; }
+    internal static class FakeMemory
+    {
+        internal const long SlotBase = 0x10000000;
+        internal const long ItemBase = 0x20000000;
+        internal const long DetailsBase = 0x30000000;
+        internal const long ModsBase = 0x40000000;
+        internal const long EntriesBase = 0x50000000;
+        internal const long ValuesBase = 0x60000000;
+        internal const long ModRow = 0x70000000;
+        internal const long ModName = 0x71000000;
+        internal const long ComponentsBase = 0x80000000;
+        internal const int Stride = 0x1000;
+        internal static int Slots;
+        internal static bool Occupied = true;
+        internal static bool FailMods;
+        internal static bool ChangeComponentsOnRead;
+        internal static int ComponentReads;
+        internal static string MetadataPath = "Metadata/Items/Rings/TestRing";
+        internal static int[] SlotItems;
+        internal static int[] Identities;
+        internal static long PointerReads, IdentityReads, MetadataStrings, MetadataStructs, ModHeaders, Vectors, FullScans;
+        internal static void Configure(int slots)
+        {
+            Slots = slots;
+            Occupied = true;
+            FailMods = false;
+            ChangeComponentsOnRead = false;
+            ComponentReads = 0;
+            MetadataPath = "Metadata/Items/Rings/TestRing";
+            SlotItems = Enumerable.Range(0, slots).ToArray();
+            Identities = Enumerable.Repeat(1, slots * 2 + 8).ToArray();
+            ResetCounters();
+        }
+        internal static void ResetCounters()
+        {
+            PointerReads = IdentityReads = MetadataStrings = MetadataStructs = ModHeaders = Vectors = FullScans = GameHelper.RemoteObjects.States.InGameStateObjects.Item.Constructions = 0;
+        }
+        internal static IntPtr Slot(int index) => new(SlotBase + index * Stride);
+        internal static IntPtr Item(int index) => new(ItemBase + index * Stride);
+    }
+    public abstract class FakePlugin { public abstract void DrawUI(); }
+    public sealed class FakeSettings
+    {
+        public bool EnableEquipmentManager = true;
+        public bool EnableDebugProbe;
+        public int ScanStartOffset = 0x100;
+        public int ScanEndOffset = 0x180;
+        public Dictionary<string, List<EquipmentGroup>> EquipmentCategoryGroups = new()
+        {
+            ["Rings"] = new() { new() { MinMatchCount = 1, ModPatternIds = new() { "single" } } },
+        };
+    }
+    public sealed partial class StashUtilityCore : FakePlugin
+    {
+        private readonly FakeSettings Settings = new();
+        private readonly Dictionary<string, List<EquipmentModOption>> equipmentOptionsByCategory = new(StringComparer.Ordinal);
+        private Dictionary<string, int> equipmentRawCounts;
+        private object handleObj;
+        private object currentUiParentsObj = new();
+        private bool equipmentDiagnosticsEnabled = true;
+        private readonly FakePerformance equipmentPerformance = new();
+        private readonly Dictionary<IntPtr, int> drawn = new();
+        private static int assertions;
+        private bool duplicateVisits;
+
+        private sealed class FakePerformance
+        {
+            internal long UiElements, RuleCompiles, Deferred, Refreshes, ReadFailures, MetadataValidations, Items;
+        }
+
+        internal static void RunCurrent(int slots)
+        {
+            FakeMemory.Configure(slots);
+            BaselineClock.TickCount64 = 1000;
+            var plugin = new StashUtilityCore();
+            plugin.DrawUI();
+            Require("first frame is bounded by at most 64 refreshes", plugin.equipmentPerformance.Refreshes <= 64);
+            int frames = 1;
+            while (plugin.equipmentSnapshots.Values.Any(s => !s.HasSnapshot) && frames < 300)
+            {
+                BaselineClock.TickCount64 += 16;
+                plugin.DrawUI();
+                frames++;
+            }
+            Require("all initial equipment eventually receives a snapshot", plugin.equipmentSnapshots.Count == slots && plugin.equipmentSnapshots.Values.All(s => s.HasSnapshot));
+            Console.WriteLine($"Current cold scheduling: {slots} slots acquired in {frames} frames; first/each frame refresh cap <=64.");
+
+            foreach (var snapshot in plugin.equipmentSnapshots.Values) snapshot.RefreshAt = BaselineClock.TickCount64 + 100;
+            FakeMemory.ResetCounters();
+            long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+            plugin.DrawUI();
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
+            Console.WriteLine($"current stable hit: metadata strings={FakeMemory.MetadataStrings}, pointer reads={FakeMemory.PointerReads}, " +
+                $"identity reads={FakeMemory.IdentityReads}, Item={Item.Constructions}, Mods headers={FakeMemory.ModHeaders}, managed bytes={allocated}.");
+            Require("stable hit performs no Metadata string reads", FakeMemory.MetadataStrings == 0);
+            Require("stable hit performs exactly one slot pointer and one identity read", FakeMemory.PointerReads == slots && FakeMemory.IdentityReads == slots);
+            Require("stable hit reuses Item and Mods", Item.Constructions == 0 && FakeMemory.ModHeaders == 0);
+            Require("stable hit draws each slot once", plugin.drawn.Count == slots);
+
+            foreach (var snapshot in plugin.equipmentSnapshots.Values) snapshot.RefreshAt = BaselineClock.TickCount64;
+            FakeMemory.ResetCounters();
+            long refreshBefore = plugin.equipmentPerformance.Refreshes;
+            plugin.DrawUI();
+            long refreshed = plugin.equipmentPerformance.Refreshes - refreshBefore;
+            Console.WriteLine($"current all-due frame: refreshed={refreshed}, deferred={slots - refreshed}, Item={Item.Constructions}, " +
+                $"metadata strings={FakeMemory.MetadataStrings}, Mods headers={FakeMemory.ModHeaders}.");
+            Require("simultaneous expiry is split across frames", slots <= 8 || refreshed < slots);
+            Require("unchanged components reuse Item during refresh", Item.Constructions == 0);
+
+            RunLifecycle();
+            Console.WriteLine($"Current lifecycle regression: PASS ({assertions} assertions, actual working Performance/methods with fake memory).");
+        }
+
+        private static void RunLifecycle()
+        {
+            FakeMemory.Configure(1);
+            BaselineClock.TickCount64 = 10000;
+            var plugin = new StashUtilityCore();
+            plugin.DrawUI();
+            Require("initial item matches", plugin.equipmentSnapshots[FakeMemory.Slot(0)].HasSnapshot && plugin.drawn.Count == 1);
+            var initial = plugin.equipmentSnapshots[FakeMemory.Slot(0)];
+
+            FakeMemory.ResetCounters();
+            BaselineClock.TickCount64++;
+            plugin.SaveEquipmentSettings("Rings");
+            plugin.DrawUI();
+            Require("rule changes rematch without reading Mods", FakeMemory.ModHeaders == 0 && ReferenceEquals(initial, plugin.equipmentSnapshots[FakeMemory.Slot(0)]));
+            Require("rule version is updated", initial.RulesVersion == plugin.equipmentRulesVersion);
+
+            FakeMemory.SlotItems[0] = 1;
+            BaselineClock.TickCount64++;
+            plugin.DrawUI();
+            var replacement = plugin.equipmentSnapshots[FakeMemory.Slot(0)];
+            Require("changed slot pointer replaces snapshot", !ReferenceEquals(initial, replacement) && replacement.ItemAddress == FakeMemory.Item(1));
+
+            FakeMemory.Identities[1]++;
+            BaselineClock.TickCount64++;
+            plugin.DrawUI();
+            var reusedAddress = plugin.equipmentSnapshots[FakeMemory.Slot(0)];
+            Require("same address with changed identity replaces snapshot", !ReferenceEquals(replacement, reusedAddress));
+
+            FakeMemory.FailMods = true;
+            BaselineClock.TickCount64 += 100;
+            plugin.duplicateVisits = true;
+            plugin.DrawUI();
+            Require("read failure hides prior highlight", !reusedAddress.HasSnapshot && plugin.drawn.Count == 0);
+            Require("duplicate visits cannot draw an expired snapshot before a failed refresh", plugin.drawn.Count == 0);
+            plugin.duplicateVisits = false;
+            Require("read failure schedules retry rather than confirmed mismatch", reusedAddress.RefreshAt > BaselineClock.TickCount64 && reusedAddress.RefreshAt <= BaselineClock.TickCount64 + 16);
+            FakeMemory.FailMods = false;
+            BaselineClock.TickCount64 += 16;
+            plugin.DrawUI();
+            Require("retry restores valid matching highlight", reusedAddress.HasSnapshot && plugin.drawn.Count == 1);
+
+            reusedAddress.ReadAt = BaselineClock.TickCount64 - 200;
+            reusedAddress.RefreshAt = BaselineClock.TickCount64 + 100;
+            plugin.DrawUI();
+            Require("200ms unverified snapshot is not drawn", plugin.drawn.Count == 0);
+            reusedAddress.RefreshAt = BaselineClock.TickCount64;
+            plugin.DrawUI();
+            Require("verified refresh restores aged snapshot", plugin.drawn.Count == 1);
+
+            FakeMemory.ChangeComponentsOnRead = true;
+            reusedAddress.RefreshAt = BaselineClock.TickCount64;
+            plugin.DrawUI();
+            Require("in-place component vector mutation rejects the snapshot", !reusedAddress.HasSnapshot && plugin.drawn.Count == 0);
+            FakeMemory.ChangeComponentsOnRead = false;
+            BaselineClock.TickCount64 += 16;
+            plugin.DrawUI();
+            Require("component consistency retry recovers", reusedAddress.HasSnapshot);
+
+            var p1 = new IntPtr(0x90000000);
+            var p2 = new IntPtr(0x91000000);
+            plugin.TrackEquipmentStashTab(p1, new IntPtr(1), 0);
+            plugin.TrackEquipmentStashTab(p2, new IntPtr(2), 0);
+            Require("first P2 panel does not evict P1 cache", plugin.equipmentSnapshots.Count == 1);
+            plugin.TrackEquipmentStashTab(p1, new IntPtr(3), 1);
+            Require("changing P1 tab invalidates snapshots and slots", plugin.equipmentSnapshots.Count == 0 && plugin.itemSlotOffsets.Count == 0);
+
+            BaselineClock.TickCount64++;
+            plugin.DrawUI();
+            var beforeUi = plugin.equipmentSnapshots[FakeMemory.Slot(0)];
+            var layout = new UiElementBaseOffset { Self = FakeMemory.Slot(0), Vtable = new IntPtr(8), ParentPtr = new IntPtr(9) };
+            plugin.ProcessVisibleItemSlot(FakeMemory.Slot(0), layout);
+            long wrappers = plugin.equipmentPerformance.UiElements;
+            plugin.ProcessVisibleItemSlot(FakeMemory.Slot(0), layout);
+            Require("stable geometry reuses the UI wrapper", plugin.equipmentPerformance.UiElements == wrappers);
+            plugin.currentUiParentsObj = new();
+            plugin.ProcessVisibleItemSlot(FakeMemory.Slot(0), layout);
+            Require("same-address UI parent rebuild invalidates snapshot", !ReferenceEquals(beforeUi, plugin.equipmentSnapshots[FakeMemory.Slot(0)]));
+
+            GameHelper.Core.Process.Handle = new();
+            BaselineClock.TickCount64++;
+            plugin.DrawUI();
+            Require("process reconnect rebuilds snapshot", !ReferenceEquals(beforeUi, plugin.equipmentSnapshots[FakeMemory.Slot(0)]));
+            var beforeArea = plugin.equipmentSnapshots[FakeMemory.Slot(0)];
+            GameHelper.Core.States.InGameStateObject.CurrentAreaInstance.AreaHash = "next-area";
+            BaselineClock.TickCount64++;
+            plugin.DrawUI();
+            Require("area transition rebuilds snapshot", !ReferenceEquals(beforeArea, plugin.equipmentSnapshots[FakeMemory.Slot(0)]));
+
+            plugin.Settings.EquipmentCategoryGroups["Rings"].Clear();
+            plugin.SaveEquipmentSettings("Rings");
+            BaselineClock.TickCount64++;
+            plugin.DrawUI();
+            Require("empty rules keep a validated zero-match snapshot", plugin.equipmentSnapshots[FakeMemory.Slot(0)].HasSnapshot && plugin.drawn.Count == 0);
+            FakeMemory.MetadataPath = "Metadata/Items/Amulets/TestAmulet";
+            BaselineClock.TickCount64 += 100;
+            plugin.DrawUI();
+            Require("no-rule categories still revalidate Metadata", !plugin.equipmentSnapshots[FakeMemory.Slot(0)].HasSnapshot);
+            BaselineClock.TickCount64++;
+            plugin.DrawUI();
+            Require("same-header Metadata reuse updates category", plugin.equipmentSnapshots[FakeMemory.Slot(0)].Category == "Amulets");
+
+            FakeMemory.Occupied = false;
+            BaselineClock.TickCount64++;
+            plugin.DrawUI();
+            Require("removing item clears snapshot immediately", plugin.equipmentSnapshots.Count == 0 && plugin.drawn.Count == 0);
+            FakeMemory.Configure(144);
+            FakeMemory.Occupied = false;
+            var empty = new StashUtilityCore();
+            BaselineClock.TickCount64 += 100;
+            empty.DrawUI();
+            Console.WriteLine($"current empty cold frame: slot vector scans={FakeMemory.FullScans}, pointer reads={FakeMemory.PointerReads}.");
+            Require("empty slots are scanned with one vector each", FakeMemory.FullScans == 144 && FakeMemory.PointerReads == 0);
+            FakeMemory.ResetCounters();
+            BaselineClock.TickCount64++;
+            empty.DrawUI();
+            Require("empty negative cache avoids repeat scanning", FakeMemory.FullScans == 0 && FakeMemory.PointerReads == 0);
+
+            // A proven empty offset remains polled and discovers an insertion on the next frame.
+            FakeMemory.Configure(1);
+            var insertion = new StashUtilityCore();
+            BaselineClock.TickCount64 += 100;
+            insertion.DrawUI();
+            FakeMemory.Occupied = false;
+            BaselineClock.TickCount64++;
+            insertion.DrawUI();
+            FakeMemory.ResetCounters();
+            BaselineClock.TickCount64++;
+            insertion.DrawUI();
+            Require("proven empty offset uses one pointer read", FakeMemory.PointerReads == 1 && FakeMemory.FullScans == 0);
+            FakeMemory.Occupied = true;
+            BaselineClock.TickCount64++;
+            insertion.DrawUI();
+            Require("insertion into proven offset is visible immediately", insertion.equipmentSnapshots.Count == 1 && insertion.drawn.Count == 1);
+
+            // New arrivals keep a real deadline; an overdue existing item must outrank them.
+            var existing = insertion.equipmentSnapshots[FakeMemory.Slot(0)];
+            var arrival = new EquipmentSnapshot { RefreshAt = BaselineClock.TickCount64, HasSnapshot = false };
+            existing.RefreshAt = BaselineClock.TickCount64 - 101;
+            Require("overdue work outranks new arrivals", insertion.CompareEquipmentRefreshPriority(existing, arrival) < 0);
+            existing.RefreshAt = BaselineClock.TickCount64 + 100;
+            insertion.Settings.EquipmentCategoryGroups["Rings"][0].MinMatchCount = 2;
+            insertion.SaveEquipmentSettings("Rings");
+            insertion.DrawUI();
+            Require("confirmed mismatch remains a valid snapshot", existing.HasSnapshot && existing.MatchedCount == 0 && insertion.drawn.Count == 0);
+        }
+
+        private static void Require(string scenario, bool passed)
+        {
+            assertions++;
+            if (!passed) throw new InvalidOperationException($"Current regression failed: {scenario}.");
+        }
+
+        private bool InitReflection() => true;
+        private void ClearEquipmentMemoryDelegates() { }
+        private void FlushPendingSettings() { }
+        private void RequestSettingsSave() { }
+        private void BeginEquipmentPerformanceFrame() { }
+        private void EndEquipmentPerformanceFrame() { }
+        private void DrawOverlayFrame()
+        {
+            drawn.Clear();
+            for (int i = 0; i < FakeMemory.Slots; i++) ProcessItemSlot(FakeMemory.Slot(i), new Vector2(i + 1, 1), Vector2.One);
+            if (duplicateVisits) ProcessItemSlot(FakeMemory.Slot(0), Vector2.One, Vector2.One);
+        }
+        private void DrawEquipmentHighlight(int count, Vector2 position, Vector2 size)
+        {
+            if (count > 0) drawn[FakeMemory.Slot((int)position.X - 1)] = count;
+        }
+        private void EvaluateAndHighlightItem(Item item, Vector2 position, Vector2 size, IntPtr slot) =>
+            DrawEquipmentHighlight(RefreshEquipmentMatch(item, "Rings", slot), position, size);
+        private static bool IsReadableAddress(IntPtr address) => address.ToInt64() >= 0x10000;
+
+        private static bool TryReadMemory<T>(IntPtr address, out T result) where T : unmanaged
+        {
+            result = default;
+            long value = address.ToInt64();
+            if (typeof(T) == typeof(IntPtr))
+            {
+                FakeMemory.PointerReads++;
+                IntPtr pointer = IntPtr.Zero;
+                if (value >= FakeMemory.SlotBase && value < FakeMemory.SlotBase + FakeMemory.Slots * FakeMemory.Stride)
+                {
+                    long offset = value - FakeMemory.SlotBase;
+                    int slot = (int)(offset / FakeMemory.Stride);
+                    if (FakeMemory.Occupied && offset % FakeMemory.Stride == 0x100) pointer = FakeMemory.Item(FakeMemory.SlotItems[slot]);
+                }
+                else if (value >= FakeMemory.ItemBase && value < FakeMemory.DetailsBase)
+                    pointer = new(FakeMemory.DetailsBase + value - FakeMemory.ItemBase - 8);
+                else if (value == FakeMemory.ModRow) pointer = new(FakeMemory.ModName);
+                result = Unsafe.As<IntPtr, T>(ref pointer);
+                return true;
+            }
+            if (typeof(T) == typeof(ItemStruct))
+            {
+                FakeMemory.IdentityReads++;
+                int item = (int)((value - FakeMemory.ItemBase) / FakeMemory.Stride);
+                var identity = new ItemStruct
+                {
+                    VTablePtr = new(0xA0000000 + FakeMemory.Identities[item] * 8),
+                    EntityDetailsPtr = new(FakeMemory.DetailsBase + item * FakeMemory.Stride),
+                    ComponentListPtr = new StdVector { First = new(FakeMemory.ComponentsBase + item * FakeMemory.Stride), Last = new(FakeMemory.ComponentsBase + item * FakeMemory.Stride + 8) },
+                };
+                result = Unsafe.As<ItemStruct, T>(ref identity);
+                return true;
+            }
+            if (typeof(T) == typeof(StdWString))
+            {
+                FakeMemory.MetadataStructs++;
+                var text = new StdWString { Buffer = new(0x72000000), Length = 29, Capacity = 29 };
+                result = Unsafe.As<StdWString, T>(ref text);
+                return true;
+            }
+            if (typeof(T) == typeof(ModsOffsets))
+            {
+                FakeMemory.ModHeaders++;
+                if (FakeMemory.FailMods) return false;
+                long offset = value - FakeMemory.ModsBase;
+                var vector = new StdVector { First = new(FakeMemory.EntriesBase + offset), Last = new(FakeMemory.EntriesBase + offset + 0x40) };
+                var mods = new ModsOffsets { Details0 = new ModsAndObjectMagicProperties { Rarity = 2, Mods = new AllModsType { ExplicitMods = vector } } };
+                mods.Header.EntityPtr = new(FakeMemory.ItemBase + offset);
+                result = Unsafe.As<ModsOffsets, T>(ref mods);
+                return true;
+            }
+            return false;
+        }
+        private static string ReadStdWString(StdWString text)
+        {
+            FakeMemory.MetadataStrings++;
+            return FakeMemory.MetadataPath;
+        }
+        private static bool TryReadVector<T>(StdVector vector, int maximum, out T[] values) where T : unmanaged
+        {
+            FakeMemory.Vectors++;
+            if (typeof(T) == typeof(ModArrayStruct))
+            {
+                long offset = vector.First.ToInt64() - FakeMemory.EntriesBase;
+                var entries = new[] { new ModArrayStruct { ModsPtr = new(FakeMemory.ModRow), Value0 = 10,
+                    Values = new StdVector { First = new(FakeMemory.ValuesBase + offset), Last = new(FakeMemory.ValuesBase + offset + 4) } } };
+                values = Unsafe.As<ModArrayStruct[], T[]>(ref entries);
+                return true;
+            }
+            if (typeof(T) == typeof(int))
+            {
+                var raw = new[] { 10 };
+                values = Unsafe.As<int[], T[]>(ref raw);
+                return true;
+            }
+            if (typeof(T) == typeof(IntPtr))
+            {
+                var pointers = ReadPointers(vector);
+                values = Unsafe.As<IntPtr[], T[]>(ref pointers);
+                return true;
+            }
+            values = Array.Empty<T>();
+            return false;
+        }
+        private static IntPtr[] ReadPointers(StdVector vector)
+        {
+            long first = vector.First.ToInt64();
+            if (first >= FakeMemory.ComponentsBase)
+            {
+                long offset = first - FakeMemory.ComponentsBase;
+                long mutation = FakeMemory.ChangeComponentsOnRead ? (++FakeMemory.ComponentReads % 2) * 8 : 0;
+                return new[] { new IntPtr(FakeMemory.ModsBase + offset + mutation) };
+            }
+            FakeMemory.FullScans++;
+            var pointers = new IntPtr[(vector.Last.ToInt64() - first) / 8];
+            int slot = (int)((first - FakeMemory.SlotBase) / FakeMemory.Stride);
+            int offsetInSlot = (int)((first - FakeMemory.SlotBase) % FakeMemory.Stride);
+            int index = (0x100 - offsetInSlot) / 8;
+            if (FakeMemory.Occupied && index >= 0 && index < pointers.Length) pointers[index] = FakeMemory.Item(FakeMemory.SlotItems[slot]);
+            return pointers;
+        }
+        private static T[] ReadStdVector<T>(StdVector vector) where T : unmanaged
+        {
+            if (typeof(T) == typeof(IntPtr))
+            {
+                var pointers = ReadPointers(vector);
+                return Unsafe.As<IntPtr[], T[]>(ref pointers);
+            }
+            if (typeof(T) != typeof(byte)) return Array.Empty<T>();
+            var bytes = new byte[256];
+            System.Text.Encoding.Unicode.GetBytes("Single1").CopyTo(bytes, 0);
+            return Unsafe.As<byte[], T[]>(ref bytes);
+        }
+    }
+}

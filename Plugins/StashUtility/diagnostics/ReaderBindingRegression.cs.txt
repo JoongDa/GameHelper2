@@ -1,0 +1,63 @@
+// <copyright file="ReaderBindingRegression.cs" company="None">
+// Copyright (c) None. All rights reserved.
+// </copyright>
+
+namespace BindingRegression
+{
+    using System;
+    using System.Collections.Generic;
+    using System.Runtime.CompilerServices;
+    using GameOffsets.Natives;
+
+    public sealed partial class ReaderProbe
+    {
+        private object handleObj = new FakeHandle(7);
+        private readonly Dictionary<Type, Delegate> readMemoryMethods = new();
+        private readonly Dictionary<Type, Delegate> tryReadMemoryMethods = new();
+        private readonly Dictionary<Type, Delegate> readStdVectorMethods = new();
+        private bool equipmentDiagnosticsEnabled = true;
+        private Counters equipmentPerformance;
+        private struct Counters { internal int MemoryCalls, Vectors; }
+
+        internal static void Run()
+        {
+            var probe = new ReaderProbe();
+            Check(probe.ReadMemory<int>(new IntPtr(1)) == 7);
+            Check(probe.TryReadMemory<int>(new IntPtr(1), out var value) && value == 7);
+            Check(probe.ReadStdVector<int>(default)[0] == 7);
+            ((FakeHandle)probe.handleObj).Fail = true;
+            Check(!probe.TryReadMemory<int>(new IntPtr(1), out value) && value == 0);
+            ((FakeHandle)probe.handleObj).Throw = true;
+            Check(!probe.TryReadMemory<int>(new IntPtr(1), out value) && value == 0);
+            probe.handleObj = new FakeHandle(19);
+            probe.ClearEquipmentMemoryDelegates();
+            Check(probe.ReadMemory<int>(new IntPtr(1)) == 19);
+            Check(probe.TryReadMemory<int>(new IntPtr(1), out value) && value == 19);
+            Check(probe.ReadStdVector<int>(default)[0] == 19);
+            Console.WriteLine("Reader binding regression: PASS (8 assertions, actual typed reader methods and handle reset).");
+        }
+
+        private static void Check(bool passed)
+        {
+            if (!passed) throw new InvalidOperationException("Reader delegate binding regression failed.");
+        }
+
+        private sealed class FakeHandle(int value)
+        {
+            internal bool Fail;
+            internal bool Throw;
+            private T ReadMemory<T>(IntPtr address) where T : unmanaged
+            {
+                int result = value;
+                return Unsafe.As<int, T>(ref result);
+            }
+            private bool TryReadMemory<T>(IntPtr address, out T result) where T : unmanaged
+            {
+                if (Throw) throw new InvalidOperationException("Synthetic read failure.");
+                result = Fail ? default : ReadMemory<T>(address);
+                return !Fail;
+            }
+            private T[] ReadStdVector<T>(StdVector vector) where T : unmanaged => new[] { ReadMemory<T>(IntPtr.Zero) };
+        }
+    }
+}

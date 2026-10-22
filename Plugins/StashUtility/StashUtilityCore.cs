@@ -29,9 +29,9 @@ namespace StashUtility
         private object currentUiParentsObj; // Points to either uiParentsObj or uiParentsObjP2 during processing
         private MethodInfo updateCacheMethod;
 
-        private readonly Dictionary<Type, MethodInfo> readMemoryMethods = new();
-        private readonly Dictionary<Type, MethodInfo> readStdVectorMethods = new();
-        private readonly Dictionary<Type, MethodInfo> tryReadMemoryMethods = new();
+        private readonly Dictionary<Type, Delegate> readMemoryMethods = new();
+        private readonly Dictionary<Type, Delegate> readStdVectorMethods = new();
+        private readonly Dictionary<Type, Delegate> tryReadMemoryMethods = new();
 
         private struct CoopDebugInfo
         {
@@ -90,6 +90,7 @@ namespace StashUtility
 
         public override void OnDisable()
         {
+            SaveSettings();
             ClearEquipmentRuntimeCaches();
             equipmentCompiledGroups.Clear();
             equipmentProcessHandle = null;
@@ -102,7 +103,7 @@ namespace StashUtility
             equipmentRulesVersion++;
             equipmentProcessHandle = null;
             hasClearedDumpFile = false;
-            if (File.Exists(SettingPathname))
+            if (!settingsSavePending && File.Exists(SettingPathname))
             {
                 try
                 {
@@ -237,21 +238,7 @@ namespace StashUtility
 
         public override void SaveSettings()
         {
-            try
-            {
-                var dir = Path.GetDirectoryName(SettingPathname);
-                if (!string.IsNullOrEmpty(dir))
-                {
-                    Directory.CreateDirectory(dir);
-                }
-
-                var settingsData = JsonConvert.SerializeObject(Settings, Formatting.Indented);
-                File.WriteAllText(SettingPathname, settingsData);
-            }
-            catch
-            {
-                // Ignored
-            }
+            PersistSettings();
         }
 
         private void DrawMinMaxFilterTableRow(string label, string id, int maxSliderVal, ref bool filterMin, ref int minVal, ref bool filterMax, ref int maxVal)
@@ -266,22 +253,22 @@ namespace StashUtility
             
             // Column 2: Min
             ImGui.TableNextColumn();
-            ImGui.Checkbox(PluginText.T("stashutility.min", "Min"), ref filterMin);
+            if (ImGui.Checkbox(PluginText.T("stashutility.min", "Min"), ref filterMin)) RequestSettingsSave();
             if (filterMin)
             {
                 ImGui.SameLine();
                 ImGui.SetNextItemWidth(120f);
-                ImGui.SliderInt("##minval", ref minVal, 0, maxSliderVal);
+                if (ImGui.SliderInt("##minval", ref minVal, 0, maxSliderVal)) RequestSettingsSave();
             }
             
             // Column 3: Max
             ImGui.TableNextColumn();
-            ImGui.Checkbox(PluginText.T("stashutility.max", "Max"), ref filterMax);
+            if (ImGui.Checkbox(PluginText.T("stashutility.max", "Max"), ref filterMax)) RequestSettingsSave();
             if (filterMax)
             {
                 ImGui.SameLine();
                 ImGui.SetNextItemWidth(120f);
-                ImGui.SliderInt("##maxval", ref maxVal, 0, maxSliderVal);
+                if (ImGui.SliderInt("##maxval", ref maxVal, 0, maxSliderVal)) RequestSettingsSave();
             }
             
             ImGui.PopID();
@@ -289,13 +276,13 @@ namespace StashUtility
 
         public override void DrawSettings()
         {
-            ImGui.Checkbox(PluginText.T("stashutility.show_in_bg", "Show Overlay When Game in Background"), ref Settings.ShowOverlayInBackground);
+            if (ImGui.Checkbox(PluginText.T("stashutility.show_in_bg", "Show Overlay When Game in Background"), ref Settings.ShowOverlayInBackground)) RequestSettingsSave();
             ImGuiHelper.ToolTip(PluginText.T("stashutility.show_in_bg_tooltip", "If checked, the waystone highlights will remain visible even when the game window is in the background."));
 
-            ImGui.Checkbox(PluginText.T("stashutility.enable_merchant_purchase", "Enable Merchant Purchase Panel Overlay"), ref Settings.EnableMerchantPurchasePanel);
+            if (ImGui.Checkbox(PluginText.T("stashutility.enable_merchant_purchase", "Enable Merchant Purchase Panel Overlay"), ref Settings.EnableMerchantPurchasePanel)) RequestSettingsSave();
             ImGuiHelper.ToolTip(PluginText.T("stashutility.enable_merchant_purchase_tooltip", "When checked, waystones and tablets in the active merchant purchase panel tab will be highlighted based on your criteria."));
 
-            ImGui.Checkbox(PluginText.T("stashutility.enable_debug", "Enable Debug Settings"), ref Settings.EnableDebugProbe);
+            if (ImGui.Checkbox(PluginText.T("stashutility.enable_debug", "Enable Debug Settings"), ref Settings.EnableDebugProbe)) RequestSettingsSave();
             ImGuiHelper.ToolTip(PluginText.T("stashutility.enable_debug_tooltip", "Enables advanced debugging options, interactive explorer, and hovered item inspector."));
 
             if (Settings.EnableDebugProbe)
@@ -381,12 +368,13 @@ namespace StashUtility
                         }
                     }
 
-                    ImGui.InputText(PluginText.T("stashutility.debug.path_indices", "Path Indices"), ref Settings.PathString, 128);
+                    if (ImGui.InputText(PluginText.T("stashutility.debug.path_indices", "Path Indices"), ref Settings.PathString, 128)) RequestSettingsSave();
                     ImGuiHelper.ToolTip(PluginText.T("stashutility.debug.path_indices_tooltip", "Comma-separated indices starting from the LeftPanel root. Edit manually or click through the explorer."));
 
                     if (ImGui.Button(PluginText.T("stashutility.debug.reset_path", "Reset Path to Default")))
                     {
                         Settings.PathString = "2,0,0,0,1,1,45,0,1";
+                        RequestSettingsSave();
                     }
                     ImGui.SameLine();
                     if (ImGui.Button(PluginText.T("stashutility.debug.dump_tree", "Dump UI Tree to File")))
@@ -430,6 +418,7 @@ namespace StashUtility
                     {
                         currentDebugPath.Clear();
                         Settings.PathString = string.Join(",", currentDebugPath);
+                        RequestSettingsSave();
                     }
                     for (int i = 0; i < currentDebugPath.Count; i++)
                     {
@@ -442,6 +431,7 @@ namespace StashUtility
                             currentDebugPath.Clear();
                             currentDebugPath.AddRange(truncated);
                             Settings.PathString = string.Join(",", currentDebugPath);
+                            RequestSettingsSave();
                         }
                     }
 
@@ -536,6 +526,7 @@ namespace StashUtility
                                 {
                                     currentDebugPath.Add(j);
                                     Settings.PathString = string.Join(",", currentDebugPath);
+                                    RequestSettingsSave();
                                 }
                                 if (ImGui.IsItemHovered())
                                 {
@@ -655,7 +646,7 @@ namespace StashUtility
                 }
             }
 
-            ImGui.Checkbox(PluginText.T("stashutility.enable_waystone_manager", "Enable Waystone Manager"), ref Settings.EnableWaystoneManager);
+            if (ImGui.Checkbox(PluginText.T("stashutility.enable_waystone_manager", "Enable Waystone Manager"), ref Settings.EnableWaystoneManager)) RequestSettingsSave();
             ImGuiHelper.ToolTip(PluginText.T("stashutility.enable_waystone_manager_tooltip", "Enables or disables highlighting of waystones."));
 
             if (Settings.EnableWaystoneManager)
@@ -663,16 +654,16 @@ namespace StashUtility
                 ImGui.Indent();
                 if (ImGui.CollapsingHeader(PluginText.T("stashutility.waystone_criteria_header", "Waystone Highlight Criteria (Normal)")))
                 {
-                    ImGui.SliderInt(PluginText.T("stashutility.min_tier", "Min Tier"), ref Settings.MinTier, 1, 16);
+                    if (ImGui.SliderInt(PluginText.T("stashutility.min_tier", "Min Tier"), ref Settings.MinTier, 1, 16)) RequestSettingsSave();
                     ImGuiHelper.ToolTip(PluginText.T("stashutility.min_tier_tooltip", "Minimum Waystone Tier to highlight (Normal rarity is always ignored if Hide Normal Waystones is checked)."));
 
-                    ImGui.Checkbox(PluginText.T("stashutility.filter_revives", "Filter Revives"), ref Settings.FilterMaxRevives);
+                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_revives", "Filter Revives"), ref Settings.FilterMaxRevives)) RequestSettingsSave();
                     if (Settings.FilterMaxRevives)
                     {
                         ImGui.SameLine();
                         ImGui.SetCursorPosX(300f);
                         ImGui.SetNextItemWidth(150f);
-                        ImGui.SliderInt(PluginText.T("stashutility.max_revives", "Max Revives Allowed##val"), ref Settings.MaxRevivesAvailable, 0, 5);
+                        if (ImGui.SliderInt(PluginText.T("stashutility.max_revives", "Max Revives Allowed##val"), ref Settings.MaxRevivesAvailable, 0, 5)) RequestSettingsSave();
                     }
 
                     if (ImGui.BeginTable("FiltersTable", 3, ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.PadOuterX))
@@ -694,7 +685,7 @@ namespace StashUtility
 
                 if (ImGui.CollapsingHeader(PluginText.T("stashutility.waystone_mod_manager_header", "Waystone Mod Filter Manager")))
                 {
-                    ImGui.Checkbox(PluginText.T("stashutility.filter_bad_mods_only_on_highlighted", "Only Filter Bad Mods on Criteria-Meeting Waystones"), ref Settings.FilterBadModsOnlyOnHighlighted);
+                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_bad_mods_only_on_highlighted", "Only Filter Bad Mods on Criteria-Meeting Waystones"), ref Settings.FilterBadModsOnlyOnHighlighted)) RequestSettingsSave();
                     ImGuiHelper.ToolTip(PluginText.T("stashutility.filter_bad_mods_tooltip", "When checked, bad mod filtering is only applied to waystones that already meet the Tier and other active numerical criteria."));
 
                     if (ImGui.BeginCombo(PluginText.T("stashutility.add_waystone_mod", "Add Waystone Mod"), PluginText.T("stashutility.select_from_database", "Select from database...")))
@@ -712,7 +703,7 @@ namespace StashUtility
                                 if (!Settings.BadModPatterns.Contains(mod.Id) && !Settings.GoodModPatterns.Contains(mod.Id))
                                 {
                                     Settings.BadModPatterns.Add(mod.Id);
-                                    SaveSettings();
+                                    RequestSettingsSave();
                                 }
                             }
                         }
@@ -725,78 +716,78 @@ namespace StashUtility
 
                 if (ImGui.CollapsingHeader(PluginText.T("stashutility.waystone_great_conditions_header", "Waystone GREAT Highlight Conditions")))
                 {
-                    ImGui.Checkbox(PluginText.T("stashutility.filter_great_explicit_mods", "Filter Great Min Explicit Mods Count"), ref Settings.FilterGreatExplicitMods);
+                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_great_explicit_mods", "Filter Great Min Explicit Mods Count"), ref Settings.FilterGreatExplicitMods)) RequestSettingsSave();
                     if (Settings.FilterGreatExplicitMods)
                     {
                         ImGui.SameLine();
                         ImGui.SetCursorPosX(300f);
                         ImGui.SetNextItemWidth(150f);
-                        ImGui.SliderInt(PluginText.T("stashutility.min_great_explicit_mods", "Min Great Explicit Mods"), ref Settings.MinGreatExplicitMods, 0, 10);
+                        if (ImGui.SliderInt(PluginText.T("stashutility.min_great_explicit_mods", "Min Great Explicit Mods"), ref Settings.MinGreatExplicitMods, 0, 10)) RequestSettingsSave();
                     }
 
-                    ImGui.Checkbox(PluginText.T("stashutility.filter_great_max_explicit_mods", "Filter Great Max Explicit Mods Count"), ref Settings.FilterGreatMaxExplicitMods);
+                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_great_max_explicit_mods", "Filter Great Max Explicit Mods Count"), ref Settings.FilterGreatMaxExplicitMods)) RequestSettingsSave();
                     if (Settings.FilterGreatMaxExplicitMods)
                     {
                         ImGui.SameLine();
                         ImGui.SetCursorPosX(300f);
                         ImGui.SetNextItemWidth(150f);
-                        ImGui.SliderInt(PluginText.T("stashutility.max_great_explicit_mods", "Max Great Explicit Mods"), ref Settings.MaxGreatExplicitMods, 0, 10);
+                        if (ImGui.SliderInt(PluginText.T("stashutility.max_great_explicit_mods", "Max Great Explicit Mods"), ref Settings.MaxGreatExplicitMods, 0, 10)) RequestSettingsSave();
                     }
 
-                    ImGui.Checkbox(PluginText.T("stashutility.filter_great_rarity", "Filter Great Item Rarity"), ref Settings.FilterGreatRarity);
+                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_great_rarity", "Filter Great Item Rarity"), ref Settings.FilterGreatRarity)) RequestSettingsSave();
                     if (Settings.FilterGreatRarity)
                     {
                         ImGui.SameLine();
                         ImGui.SetCursorPosX(300f);
                         ImGui.SetNextItemWidth(150f);
-                        ImGui.SliderInt(PluginText.T("stashutility.min_great_rarity", "Min Great Rarity (%)"), ref Settings.MinGreatRarity, 0, 200);
+                        if (ImGui.SliderInt(PluginText.T("stashutility.min_great_rarity", "Min Great Rarity (%)"), ref Settings.MinGreatRarity, 0, 200)) RequestSettingsSave();
                     }
 
-                    ImGui.Checkbox(PluginText.T("stashutility.filter_great_pack_size", "Filter Great Pack Size"), ref Settings.FilterGreatPackSize);
+                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_great_pack_size", "Filter Great Pack Size"), ref Settings.FilterGreatPackSize)) RequestSettingsSave();
                     if (Settings.FilterGreatPackSize)
                     {
                         ImGui.SameLine();
                         ImGui.SetCursorPosX(300f);
                         ImGui.SetNextItemWidth(150f);
-                        ImGui.SliderInt(PluginText.T("stashutility.min_great_pack_size", "Min Great Pack Size (%)"), ref Settings.MinGreatPackSize, 0, 100);
+                        if (ImGui.SliderInt(PluginText.T("stashutility.min_great_pack_size", "Min Great Pack Size (%)"), ref Settings.MinGreatPackSize, 0, 100)) RequestSettingsSave();
                     }
 
-                    ImGui.Checkbox(PluginText.T("stashutility.filter_great_monster_rarity", "Filter Great Monster Rarity"), ref Settings.FilterGreatMonstRarity);
+                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_great_monster_rarity", "Filter Great Monster Rarity"), ref Settings.FilterGreatMonstRarity)) RequestSettingsSave();
                     if (Settings.FilterGreatMonstRarity)
                     {
                         ImGui.SameLine();
                         ImGui.SetCursorPosX(300f);
                         ImGui.SetNextItemWidth(150f);
-                        ImGui.SliderInt(PluginText.T("stashutility.min_great_monster_rarity", "Min Great Monster Rarity (%)"), ref Settings.MinGreatMonstRarity, 0, 100);
+                        if (ImGui.SliderInt(PluginText.T("stashutility.min_great_monster_rarity", "Min Great Monster Rarity (%)"), ref Settings.MinGreatMonstRarity, 0, 100)) RequestSettingsSave();
                     }
 
-                    ImGui.Checkbox(PluginText.T("stashutility.filter_great_monster_effectiveness", "Filter Great Monster Effectiveness"), ref Settings.FilterGreatEffect);
+                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_great_monster_effectiveness", "Filter Great Monster Effectiveness"), ref Settings.FilterGreatEffect)) RequestSettingsSave();
                     if (Settings.FilterGreatEffect)
                     {
                         ImGui.SameLine();
                         ImGui.SetCursorPosX(300f);
                         ImGui.SetNextItemWidth(150f);
-                        ImGui.SliderInt(PluginText.T("stashutility.min_great_monster_effectiveness", "Min Great Effectiveness (%)"), ref Settings.MinGreatEffect, 0, 100);
+                        if (ImGui.SliderInt(PluginText.T("stashutility.min_great_monster_effectiveness", "Min Great Effectiveness (%)"), ref Settings.MinGreatEffect, 0, 100)) RequestSettingsSave();
                     }
 
-                    ImGui.Checkbox(PluginText.T("stashutility.filter_great_waystone_drop_chance", "Filter Great Waystone Drop Chance"), ref Settings.FilterGreatDropChance);
+                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_great_waystone_drop_chance", "Filter Great Waystone Drop Chance"), ref Settings.FilterGreatDropChance)) RequestSettingsSave();
                     if (Settings.FilterGreatDropChance)
                     {
                         ImGui.SameLine();
                         ImGui.SetCursorPosX(300f);
                         ImGui.SetNextItemWidth(150f);
-                        ImGui.SliderInt(PluginText.T("stashutility.min_great_waystone_drop_chance", "Min Great Drop Chance (%)"), ref Settings.MinGreatDropChance, 0, 300);
+                        if (ImGui.SliderInt(PluginText.T("stashutility.min_great_waystone_drop_chance", "Min Great Drop Chance (%)"), ref Settings.MinGreatDropChance, 0, 300)) RequestSettingsSave();
                     }
                 }
                 ImGui.Unindent();
             }
 
-            ImGui.Checkbox(PluginText.T("stashutility.enable_tablet_manager", "Enable Tablet Manager"), ref Settings.EnableTabletManager);
+            if (ImGui.Checkbox(PluginText.T("stashutility.enable_tablet_manager", "Enable Tablet Manager"), ref Settings.EnableTabletManager)) RequestSettingsSave();
             ImGuiHelper.ToolTip(PluginText.T("stashutility.enable_tablet_manager_tooltip", "Enables or disables highlighting of precursor/breach tablets."));
             if (Settings.EnableTabletManager)
             {
                 ImGui.Indent();
-                ImGui.Checkbox(PluginText.T("stashutility.disable_bad_tablet_highlight", "Disable Bad Tablet Highlight"), ref Settings.DisableBadTabletHighlight);
+                if (ImGui.Checkbox(PluginText.T("stashutility.disable_bad_tablet_highlight", "Disable Bad Tablet Highlight"), ref Settings.DisableBadTabletHighlight)) RequestSettingsSave();
                 ImGui.Unindent();
             }
 
@@ -806,19 +797,19 @@ namespace StashUtility
                 if (ImGui.CollapsingHeader(PluginText.T("stashutility.tablet_mod_manager_header", "Tablet Mod Filter Manager")))
                 {
                     ImGui.SetNextItemWidth(150f);
-                    if (ImGui.SliderInt(PluginText.T("stashutility.min_tablet_mods_to_highlight", "Min Good Mods To Highlight"), ref Settings.MinTabletGoodModsToHighlight, 1, 5)) SaveSettings();
+                    if (ImGui.SliderInt(PluginText.T("stashutility.min_tablet_mods_to_highlight", "Min Good Mods To Highlight"), ref Settings.MinTabletGoodModsToHighlight, 1, 5)) RequestSettingsSave();
                     
                     ImGui.SetNextItemWidth(150f);
-                    if (ImGui.SliderInt(PluginText.T("stashutility.min_good_mods_to_ignore_bad", "Min Good Mods To Ignore Bad"), ref Settings.MinGoodModsToIgnoreBad, 0, 6)) SaveSettings();
+                    if (ImGui.SliderInt(PluginText.T("stashutility.min_good_mods_to_ignore_bad", "Min Good Mods To Ignore Bad"), ref Settings.MinGoodModsToIgnoreBad, 0, 6)) RequestSettingsSave();
                     ImGuiHelper.ToolTip(PluginText.T("stashutility.min_good_mods_to_ignore_bad_tooltip", "If a tablet has this many good mods, it will ignore any bad mods and still be highlighted as Good/Great."));
 
-                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_tablet_great", "Filter Tablet Great Status"), ref Settings.FilterTabletGreat)) SaveSettings();
+                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_tablet_great", "Filter Tablet Great Status"), ref Settings.FilterTabletGreat)) RequestSettingsSave();
                     if (Settings.FilterTabletGreat)
                     {
                         ImGui.SameLine();
                         ImGui.SetCursorPosX(300f);
                         ImGui.SetNextItemWidth(150f);
-                        if (ImGui.SliderInt(PluginText.T("stashutility.min_good_tablet_mods", "Min Good Tablet Mods Count"), ref Settings.MinTabletGoodMods, 1, 5)) SaveSettings();
+                        if (ImGui.SliderInt(PluginText.T("stashutility.min_good_tablet_mods", "Min Good Tablet Mods Count"), ref Settings.MinTabletGoodMods, 1, 5)) RequestSettingsSave();
                     }
                     ImGui.Spacing();
 
@@ -896,20 +887,20 @@ namespace StashUtility
                 ImGui.Unindent();
             }
 
-            ImGui.Checkbox(PluginText.T("stashutility.enable_jewel_manager", "Enable Jewel Manager"), ref Settings.EnableJewelManager);
+            if (ImGui.Checkbox(PluginText.T("stashutility.enable_jewel_manager", "Enable Jewel Manager"), ref Settings.EnableJewelManager)) RequestSettingsSave();
             ImGuiHelper.ToolTip(PluginText.T("stashutility.enable_jewel_manager_tooltip", "Enables or disables highlighting of Jewels in stash tabs."));
             if (Settings.EnableJewelManager)
             {
                 ImGui.Indent();
                 if (ImGui.CollapsingHeader(PluginText.T("stashutility.jewel_mod_manager_header", "Jewel Mod Filter Manager")))
                 {
-                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_jewel_great", "Filter Jewel Great Status"), ref Settings.FilterJewelGreat)) SaveSettings();
+                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_jewel_great", "Filter Jewel Great Status"), ref Settings.FilterJewelGreat)) RequestSettingsSave();
                     if (Settings.FilterJewelGreat)
                     {
                         ImGui.SameLine();
                         ImGui.SetCursorPosX(300f);
                         ImGui.SetNextItemWidth(150f);
-                        if (ImGui.SliderInt(PluginText.T("stashutility.min_good_jewel_mods", "Min Good Jewel Mods Count"), ref Settings.MinJewelGoodMods, 1, 4)) SaveSettings();
+                        if (ImGui.SliderInt(PluginText.T("stashutility.min_good_jewel_mods", "Min Good Jewel Mods Count"), ref Settings.MinJewelGoodMods, 1, 4)) RequestSettingsSave();
                     }
                     ImGui.Spacing();
 
@@ -952,13 +943,13 @@ namespace StashUtility
                                             defGroup.ModRequiredMinRolls[id] = roll;
                                     }
                                     groupList.Add(defGroup);
-                                    SaveSettings();
+                                    RequestSettingsSave();
                                 }
 
                                 if (ImGui.Button($"+ Add New Profile Group##add_group_{cat}"))
                                 {
                                     groupList.Add(new StashUtility.Models.JewelGroup { Name = $"Profile Group {groupList.Count + 1}", MinMatchCount = 2 });
-                                    SaveSettings();
+                                    RequestSettingsSave();
                                 }
                                 ImGui.Separator();
 
@@ -977,7 +968,7 @@ namespace StashUtility
                                         if (ImGui.InputText($"Group Name##name_{group.Id}", ref nameBuf, 50))
                                         {
                                             group.Name = nameBuf;
-                                            SaveSettings();
+                                            RequestSettingsSave();
                                         }
 
                                         ImGui.SameLine();
@@ -986,7 +977,7 @@ namespace StashUtility
                                         if (ImGui.SliderInt($"Min Match##min_{group.Id}", ref minMatch, 1, 4))
                                         {
                                             group.MinMatchCount = minMatch;
-                                            SaveSettings();
+                                            RequestSettingsSave();
                                         }
 
                                         if (groupList.Count > 1)
@@ -995,7 +986,7 @@ namespace StashUtility
                                             if (ImGui.Button($"Delete Group##del_{group.Id}"))
                                             {
                                                 groupList.RemoveAt(gIdx);
-                                                SaveSettings();
+                                                RequestSettingsSave();
                                                 ImGui.Unindent(10f);
                                                 ImGui.PopID();
                                                 break;
@@ -1046,7 +1037,7 @@ namespace StashUtility
                                                 if (!group.ModPatternIds.Contains(targetMod.Id))
                                                 {
                                                     group.ModPatternIds.Add(targetMod.Id);
-                                                    SaveSettings();
+                                                    RequestSettingsSave();
                                                 }
                                             }
                                         }
@@ -1068,7 +1059,7 @@ namespace StashUtility
                                                 if (ImGui.Button(" X "))
                                                 {
                                                     group.ModPatternIds.Remove(mod.Id);
-                                                    SaveSettings();
+                                                    RequestSettingsSave();
                                                 }
                                                 ImGui.SameLine();
                                                 ImGui.TextUnformatted(mod.Name);
@@ -1084,7 +1075,7 @@ namespace StashUtility
                                                     if (ImGui.SliderInt($"Req. Min Roll##min_{mod.Id}", ref intRoll, (int)mod.MinRoll, (int)mod.MaxRoll))
                                                     {
                                                         group.ModRequiredMinRolls[mod.Id] = (float)intRoll;
-                                                        SaveSettings();
+                                                        RequestSettingsSave();
                                                     }
                                                     ImGui.Unindent(25f);
                                                 }
@@ -1109,20 +1100,21 @@ namespace StashUtility
                 ImGui.Unindent();
             }
 
-            ImGui.Checkbox(PluginText.T("stashutility.enable_equipment_manager", "Enable Equipment Manager"), ref Settings.EnableEquipmentManager);
+            if (ImGui.Checkbox(PluginText.T("stashutility.enable_equipment_manager", "Enable Equipment Manager"), ref Settings.EnableEquipmentManager)) RequestSettingsSave();
             ImGuiHelper.ToolTip(PluginText.T("stashutility.enable_equipment_manager_tooltip", "Enables or disables highlighting of Equipment in stash tabs."));
+            DrawEquipmentPerformanceSettings();
             if (Settings.EnableEquipmentManager)
             {
                 ImGui.Indent();
                 if (ImGui.CollapsingHeader(PluginText.T("stashutility.equipment_mod_manager_header", "Equipment Mod Filter Manager")))
                 {
-                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_equipment_great", "Filter Equipment Great Status"), ref Settings.FilterEquipmentGreat)) SaveEquipmentSettings();
+                    if (ImGui.Checkbox(PluginText.T("stashutility.filter_equipment_great", "Filter Equipment Great Status"), ref Settings.FilterEquipmentGreat)) RequestSettingsSave();
                     if (Settings.FilterEquipmentGreat)
                     {
                         ImGui.SameLine();
                         ImGui.SetCursorPosX(300f);
                         ImGui.SetNextItemWidth(150f);
-                        if (ImGui.SliderInt(PluginText.T("stashutility.min_good_equipment_mods", "Min Good Equipment Mods Count"), ref Settings.MinEquipmentGoodMods, 1, 4)) SaveEquipmentSettings();
+                        if (ImGui.SliderInt(PluginText.T("stashutility.min_good_equipment_mods", "Min Good Equipment Mods Count"), ref Settings.MinEquipmentGoodMods, 1, 4)) RequestSettingsSave();
                     }
                     ImGui.Spacing();
 
@@ -1152,13 +1144,13 @@ namespace StashUtility
                                             defGroup.ModRequiredMinRolls[id] = roll;
                                     }
                                     groupList.Add(defGroup);
-                                    SaveEquipmentSettings();
+                                    SaveEquipmentSettings(cat);
                                 }
 
                                 if (ImGui.Button($"+ Add New Profile Group##add_group_{cat}"))
                                 {
                                     groupList.Add(new StashUtility.Models.EquipmentGroup { Name = $"Profile Group {groupList.Count + 1}", MinMatchCount = 2 });
-                                    SaveEquipmentSettings();
+                                    SaveEquipmentSettings(cat);
                                 }
                                 ImGui.Separator();
 
@@ -1177,7 +1169,7 @@ namespace StashUtility
                                         if (ImGui.InputText($"Group Name##name_{group.Id}", ref nameBuf, 50))
                                         {
                                             group.Name = nameBuf;
-                                            SaveEquipmentSettings();
+                                            RequestSettingsSave();
                                         }
 
                                         ImGui.SameLine();
@@ -1186,7 +1178,7 @@ namespace StashUtility
                                         if (ImGui.SliderInt($"Min Match##min_{group.Id}", ref minMatch, 1, 6))
                                         {
                                             group.MinMatchCount = minMatch;
-                                            SaveEquipmentSettings();
+                                            SaveEquipmentSettings(cat);
                                         }
 
                                         if (groupList.Count > 1)
@@ -1195,7 +1187,7 @@ namespace StashUtility
                                             if (ImGui.Button($"Delete Group##del_{group.Id}"))
                                             {
                                                 groupList.RemoveAt(gIdx);
-                                                SaveEquipmentSettings();
+                                                SaveEquipmentSettings(cat);
                                                 ImGui.Unindent(10f);
                                                 ImGui.PopID();
                                                 break;
@@ -1249,7 +1241,7 @@ namespace StashUtility
                                                 {
                                                     group.ModPatternIds.Add(mod.Id);
                                                 }
-                                                SaveEquipmentSettings();
+                                                SaveEquipmentSettings(cat);
                                             }
                                             ImGui.EndDisabled();
                                         }
@@ -1266,7 +1258,7 @@ namespace StashUtility
                                         {
                                             foreach (var option in activeGroupMods)
                                             {
-                                                DrawEquipmentRollRow(group, option);
+                                                DrawEquipmentRollRow(cat, group, option);
                                             }
                                         }
                                         ImGui.EndChild();
@@ -1288,27 +1280,27 @@ namespace StashUtility
 
             if (ImGui.CollapsingHeader(PluginText.T("stashutility.visual_settings_header", "Overlay Visual Settings")))
             {
-                ImGui.Checkbox(PluginText.T("stashutility.show_waystone_mod_border", "Show Waystone Mod Highlight Border"), ref Settings.ShowModBorder);
-                ImGui.Checkbox(PluginText.T("stashutility.show_tablet_mod_border", "Show Tablet Mod Highlight Border"), ref Settings.ShowTabletModBorder);
-                if (ImGui.Checkbox(PluginText.T("stashutility.show_equipment_mod_border", "Show Equipment Mod Highlight Border"), ref Settings.ShowEquipmentModBorder)) SaveSettings();
-                ImGui.Checkbox(PluginText.T("stashutility.show_rarity_border", "Show Rarity Corner Indicator"), ref Settings.ShowRarityBorder);
+                if (ImGui.Checkbox(PluginText.T("stashutility.show_waystone_mod_border", "Show Waystone Mod Highlight Border"), ref Settings.ShowModBorder)) RequestSettingsSave();
+                if (ImGui.Checkbox(PluginText.T("stashutility.show_tablet_mod_border", "Show Tablet Mod Highlight Border"), ref Settings.ShowTabletModBorder)) RequestSettingsSave();
+                if (ImGui.Checkbox(PluginText.T("stashutility.show_equipment_mod_border", "Show Equipment Mod Highlight Border"), ref Settings.ShowEquipmentModBorder)) RequestSettingsSave();
+                if (ImGui.Checkbox(PluginText.T("stashutility.show_rarity_border", "Show Rarity Corner Indicator"), ref Settings.ShowRarityBorder)) RequestSettingsSave();
                 if (Settings.ShowRarityBorder)
                 {
                     ImGui.SameLine();
                     ImGui.SetNextItemWidth(150f);
-                    ImGui.SliderFloat(PluginText.T("stashutility.rarity_indicator_size", "Indicator Size##size"), ref Settings.RarityIndicatorSize, 5f, 30f);
+                    if (ImGui.SliderFloat(PluginText.T("stashutility.rarity_indicator_size", "Indicator Size##size"), ref Settings.RarityIndicatorSize, 5f, 30f)) RequestSettingsSave();
                 }
-                ImGui.Checkbox(PluginText.T("stashutility.hide_normal_waystones", "Hide Normal (White) Waystones"), ref Settings.HideNormalWaystones);
-                ImGui.SliderFloat(PluginText.T("stashutility.border_thickness", "Border Thickness"), ref Settings.BorderThickness, 1f, 10f);
-                ImGui.SliderFloat(PluginText.T("stashutility.border_margin", "Border Margin"), ref Settings.BorderMargin, 0f, 10f);
+                if (ImGui.Checkbox(PluginText.T("stashutility.hide_normal_waystones", "Hide Normal (White) Waystones"), ref Settings.HideNormalWaystones)) RequestSettingsSave();
+                if (ImGui.SliderFloat(PluginText.T("stashutility.border_thickness", "Border Thickness"), ref Settings.BorderThickness, 1f, 10f)) RequestSettingsSave();
+                if (ImGui.SliderFloat(PluginText.T("stashutility.border_margin", "Border Margin"), ref Settings.BorderMargin, 0f, 10f)) RequestSettingsSave();
 
                 string[] borderStyles = { 
                     PluginText.T("stashutility.style_solid", "Solid"), 
                     PluginText.T("stashutility.style_dashed", "Dashed"), 
                     PluginText.T("stashutility.style_dotted", "Dotted") 
                 };
-                ImGui.Combo(PluginText.T("stashutility.bad_border_style", "Bad Highlight Border Style"), ref Settings.FrameStyleBad, borderStyles, borderStyles.Length);
-                ImGui.Combo(PluginText.T("stashutility.good_border_style", "Good Highlight Border Style"), ref Settings.FrameStyleGood, borderStyles, borderStyles.Length);
+                if (ImGui.Combo(PluginText.T("stashutility.bad_border_style", "Bad Highlight Border Style"), ref Settings.FrameStyleBad, borderStyles, borderStyles.Length)) RequestSettingsSave();
+                if (ImGui.Combo(PluginText.T("stashutility.good_border_style", "Good Highlight Border Style"), ref Settings.FrameStyleGood, borderStyles, borderStyles.Length)) RequestSettingsSave();
 
                 string[] arrowPositions = { 
                     PluginText.T("stashutility.pos_top_left", "Top-Left"), 
@@ -1316,27 +1308,28 @@ namespace StashUtility
                     PluginText.T("stashutility.pos_bottom_left", "Bottom-Left"), 
                     PluginText.T("stashutility.pos_bottom_right", "Bottom-Right") 
                 };
-                ImGui.Combo(PluginText.T("stashutility.great_arrow_position", "GREAT Arrow Position"), ref Settings.GreatIndicatorPosition, arrowPositions, arrowPositions.Length);
-                ImGui.SliderFloat(PluginText.T("stashutility.great_arrow_size", "GREAT Arrow Size"), ref Settings.GreatIndicatorSize, 5f, 40f);
+                if (ImGui.Combo(PluginText.T("stashutility.great_arrow_position", "GREAT Arrow Position"), ref Settings.GreatIndicatorPosition, arrowPositions, arrowPositions.Length)) RequestSettingsSave();
+                if (ImGui.SliderFloat(PluginText.T("stashutility.great_arrow_size", "GREAT Arrow Size"), ref Settings.GreatIndicatorSize, 5f, 40f)) RequestSettingsSave();
 
                 ImGui.SeparatorText(PluginText.T("stashutility.colors_section", "Colors"));
-                if (ImGui.ColorEdit4(PluginText.T("stashutility.good_color", "Waystone Good Highlight Color"), ref Settings.GoodColor)) SaveSettings();
-                if (ImGui.ColorEdit4(PluginText.T("stashutility.bad_color", "Waystone Bad Highlight Color"), ref Settings.BadColor)) SaveSettings();
-                if (ImGui.ColorEdit4(PluginText.T("stashutility.tablet_good_color", "Tablet Good Highlight Color"), ref Settings.TabletGoodColor)) SaveSettings();
-                if (ImGui.ColorEdit4(PluginText.T("stashutility.tablet_bad_color", "Tablet Bad Highlight Color"), ref Settings.TabletBadColor)) SaveSettings();
-                if (ImGui.ColorEdit4(PluginText.T("stashutility.jewel_good_color", "Jewel Good Highlight Color"), ref Settings.JewelGoodColor)) SaveSettings();
-                if (ImGui.ColorEdit4(PluginText.T("stashutility.jewel_bad_color", "Jewel Bad Highlight Color"), ref Settings.JewelBadColor)) SaveSettings();
-                if (ImGui.ColorEdit4(PluginText.T("stashutility.equipment_good_color", "Equipment Highlight Color"), ref Settings.EquipmentGoodColor)) SaveSettings();
-                if (ImGui.ColorEdit4(PluginText.T("stashutility.waystone_great_color", "Waystone GREAT Arrow Color"), ref Settings.ColorGreat)) SaveSettings();
-                if (ImGui.ColorEdit4(PluginText.T("stashutility.tablet_great_color", "Tablet GREAT Arrow Color"), ref Settings.TabletColorGreat)) SaveSettings();
-                if (ImGui.ColorEdit4(PluginText.T("stashutility.jewel_great_color", "Jewel GREAT Arrow Color"), ref Settings.JewelColorGreat)) SaveSettings();
-                ImGui.ColorEdit4(PluginText.T("stashutility.rare_color", "Rare Rarity Color"), ref Settings.RareRarityColor);
-                ImGui.ColorEdit4(PluginText.T("stashutility.magic_color", "Magic Rarity Color"), ref Settings.MagicRarityColor);
-                ImGui.ColorEdit4(PluginText.T("stashutility.normal_color", "Normal Rarity Color"), ref Settings.NormalRarityColor);
+                if (ImGui.ColorEdit4(PluginText.T("stashutility.good_color", "Waystone Good Highlight Color"), ref Settings.GoodColor)) RequestSettingsSave();
+                if (ImGui.ColorEdit4(PluginText.T("stashutility.bad_color", "Waystone Bad Highlight Color"), ref Settings.BadColor)) RequestSettingsSave();
+                if (ImGui.ColorEdit4(PluginText.T("stashutility.tablet_good_color", "Tablet Good Highlight Color"), ref Settings.TabletGoodColor)) RequestSettingsSave();
+                if (ImGui.ColorEdit4(PluginText.T("stashutility.tablet_bad_color", "Tablet Bad Highlight Color"), ref Settings.TabletBadColor)) RequestSettingsSave();
+                if (ImGui.ColorEdit4(PluginText.T("stashutility.jewel_good_color", "Jewel Good Highlight Color"), ref Settings.JewelGoodColor)) RequestSettingsSave();
+                if (ImGui.ColorEdit4(PluginText.T("stashutility.jewel_bad_color", "Jewel Bad Highlight Color"), ref Settings.JewelBadColor)) RequestSettingsSave();
+                if (ImGui.ColorEdit4(PluginText.T("stashutility.equipment_good_color", "Equipment Highlight Color"), ref Settings.EquipmentGoodColor)) RequestSettingsSave();
+                if (ImGui.ColorEdit4(PluginText.T("stashutility.waystone_great_color", "Waystone GREAT Arrow Color"), ref Settings.ColorGreat)) RequestSettingsSave();
+                if (ImGui.ColorEdit4(PluginText.T("stashutility.tablet_great_color", "Tablet GREAT Arrow Color"), ref Settings.TabletColorGreat)) RequestSettingsSave();
+                if (ImGui.ColorEdit4(PluginText.T("stashutility.jewel_great_color", "Jewel GREAT Arrow Color"), ref Settings.JewelColorGreat)) RequestSettingsSave();
+                if (ImGui.ColorEdit4(PluginText.T("stashutility.rare_color", "Rare Rarity Color"), ref Settings.RareRarityColor)) RequestSettingsSave();
+                if (ImGui.ColorEdit4(PluginText.T("stashutility.magic_color", "Magic Rarity Color"), ref Settings.MagicRarityColor)) RequestSettingsSave();
+                if (ImGui.ColorEdit4(PluginText.T("stashutility.normal_color", "Normal Rarity Color"), ref Settings.NormalRarityColor)) RequestSettingsSave();
             }
+            FlushPendingSettings();
         }
 
-        private void DrawEquipmentRollRow(Models.EquipmentGroup group, Models.EquipmentModOption option)
+        private void DrawEquipmentRollRow(string category, Models.EquipmentGroup group, Models.EquipmentModOption option)
         {
             group.ModRequiredAverageDamageRolls ??= new();
             var selected = option.Mods.Where(mod => group.ModPatternIds.Contains(mod.Id)).ToList();
@@ -1361,7 +1354,7 @@ namespace StashUtility
                     group.ModRequiredMinRolls.Remove(mod.Id);
                     group.ModRequiredAverageDamageRolls.Remove(mod.Id);
                 }
-                SaveEquipmentSettings();
+                SaveEquipmentSettings(category);
                 ImGui.PopID();
                 ImGui.Separator();
                 return;
@@ -1400,7 +1393,7 @@ namespace StashUtility
                 ImGuiHelper.ToolTip(PluginText.T("stashutility.equipment.multiple_raw", "Multiple or unknown Raw values: no combined slider. Existing conditions are retained."));
             }
 
-            if (settingsChanged) SaveEquipmentSettings();
+            if (settingsChanged) SaveEquipmentSettings(category);
             ImGui.Unindent(25f);
             ImGui.PopID();
             ImGui.Separator();
@@ -1835,16 +1828,7 @@ namespace StashUtility
                         var slotOff = ReadMemory<UiElementBaseOffset>(slot);
                         if (!UiElementBaseFuncs.IsVisibleChecker(slotOff.Flags)) continue;
 
-                        // Retrieve screen bounds for slot
-                        var el = PluginUiElementReflection.CreateUiElement(slot, this.currentUiParentsObj);
-                        if (el == null) continue;
-
-                        var pos = (Vector2)PluginUiElementReflection.UiElementPositionProperty!.GetValue(el)!;
-                        var size = (Vector2)PluginUiElementReflection.UiElementSizeProperty!.GetValue(el)!;
-                        if (size.X <= 0f || pos == Vector2.Zero) continue;
-
-                        // Scan slot for item entity
-                        ProcessItemSlot(slot, pos, size);
+                        ProcessVisibleItemSlot(slot, slotOff);
                     }
                 }
             }
@@ -1873,16 +1857,7 @@ namespace StashUtility
                     var slotOff = ReadMemory<UiElementBaseOffset>(slot);
                     if (!UiElementBaseFuncs.IsVisibleChecker(slotOff.Flags)) continue;
 
-                    // Retrieve screen bounds for slot
-                    var el = PluginUiElementReflection.CreateUiElement(slot, this.currentUiParentsObj);
-                    if (el == null) continue;
-
-                    var pos = (Vector2)PluginUiElementReflection.UiElementPositionProperty!.GetValue(el)!;
-                    var size = (Vector2)PluginUiElementReflection.UiElementSizeProperty!.GetValue(el)!;
-                    if (size.X <= 0f || pos == Vector2.Zero) continue;
-
-                    // Scan slot for item entity
-                    ProcessItemSlot(slot, pos, size);
+                    ProcessVisibleItemSlot(slot, slotOff);
                 }
             }
         }
@@ -1899,16 +1874,7 @@ namespace StashUtility
                 var slotOff = ReadMemory<UiElementBaseOffset>(slot);
                 if (!UiElementBaseFuncs.IsVisibleChecker(slotOff.Flags)) continue;
 
-                // Retrieve screen bounds for slot
-                var el = PluginUiElementReflection.CreateUiElement(slot, this.currentUiParentsObj);
-                if (el == null) continue;
-
-                var pos = (Vector2)PluginUiElementReflection.UiElementPositionProperty!.GetValue(el)!;
-                var size = (Vector2)PluginUiElementReflection.UiElementSizeProperty!.GetValue(el)!;
-                if (size.X <= 0f || pos == Vector2.Zero) continue;
-
-                // Scan slot for item entity
-                ProcessItemSlot(slot, pos, size);
+                ProcessVisibleItemSlot(slot, slotOff);
             }
         }
 
@@ -2971,9 +2937,9 @@ namespace StashUtility
             }
         }
 
-        private bool TryReadEquipmentMods(Item item, out List<(string name, (float v0, float v1) vals)> mods)
+        private bool TryReadEquipmentMods(Item item, List<(string name, (float v0, float v1) vals)> mods)
         {
-            mods = new();
+            mods.Clear();
             equipmentRawCounts ??= Data.ModDatabase.AllEquipmentMods
                 .Where(mod => !string.IsNullOrEmpty(mod.GameModId))
                 .GroupBy(mod => mod.GameModId, StringComparer.Ordinal)
@@ -2985,26 +2951,27 @@ namespace StashUtility
                 !TryReadMemory<ModsOffsets>(address, out var before) || before.Header.EntityPtr != item.Address ||
                 !TryReadVector(before.Details0.Mods.ExplicitMods, 64, out ModArrayStruct[] entries)) return false;
 
-            var rawValues = new List<int[]>(entries.Length);
+            equipmentRawValues.Clear();
             foreach (var entry in entries)
             {
                 if (!TryReadVector(entry.Values, 16, out int[] values) || values.Length == 0 ||
                     !TryReadEquipmentModName(entry.ModsPtr, out var name)) return false;
                 if (equipmentRawCounts.TryGetValue(name, out var expectedCount) && expectedCount != values.Length) return false;
-                rawValues.Add(values);
+                equipmentRawValues.Add(values);
                 mods.Add((name, values.Length == 1 ? (entry.Value0, float.NaN) : (values[0], values[1])));
             }
 
             // Never reuse a partial result when currency changes an item during the read.
             if (!TryReadMemory<ModsOffsets>(address, out var after) || after.Header.EntityPtr != item.Address ||
                 before.Details0.Rarity != after.Details0.Rarity ||
-                !before.Details0.Mods.ExplicitMods.Equals(after.Details0.Mods.ExplicitMods) ||
+                !SameVector(before.Details0.Mods.ExplicitMods, after.Details0.Mods.ExplicitMods) ||
                 !TryReadVector(after.Details0.Mods.ExplicitMods, 64, out ModArrayStruct[] current) || current.Length != entries.Length) return false;
             for (int i = 0; i < entries.Length; i++)
             {
                 if (entries[i].ModsPtr != current[i].ModsPtr || entries[i].Value0 != current[i].Value0 ||
-                    !entries[i].Values.Equals(current[i].Values) ||
-                    !TryReadVector(current[i].Values, 16, out int[] values) || !rawValues[i].SequenceEqual(values)) return false;
+                    !SameVector(entries[i].Values, current[i].Values) ||
+                    !TryReadVector(current[i].Values, 16, out int[] values) ||
+                    !equipmentRawValues[i].AsSpan().SequenceEqual(values)) return false;
             }
             return true;
         }
@@ -3058,7 +3025,7 @@ namespace StashUtility
                 if (ImGui.Button("X"))
                 {
                     currentList.RemoveAt(i);
-                    SaveSettings();
+                    RequestSettingsSave();
                     ImGui.PopID();
                     break;
                 }
@@ -3073,7 +3040,7 @@ namespace StashUtility
                 {
                     targetList.Add(id);
                     currentList.RemoveAt(i);
-                    SaveSettings();
+                    RequestSettingsSave();
                     ImGui.PopID();
                     break;
                 }
@@ -3192,19 +3159,30 @@ namespace StashUtility
         {
             if (elementAddr == IntPtr.Zero) return IntPtr.Zero;
             if (TryGetCachedItemAddress(elementAddr, out var cachedAddress)) return cachedAddress;
-
-            for (int offset = Settings.ScanStartOffset; offset + 8 <= Settings.ScanEndOffset; offset += 8)
+            var cached = itemSlotOffsets[elementAddr];
+            // Batch pointer candidates; fall back to individual reads at unreadable page boundaries.
+            for (long offset = Settings.ScanStartOffset; offset + 8 <= Settings.ScanEndOffset;)
             {
-                if (TryReadMemory<IntPtr>(elementAddr + offset, out var cand))
+                int count = (int)Math.Min(64, (Settings.ScanEndOffset - offset) / 8);
+                var first = elementAddr + (int)offset;
+                var candidates = ReadStdVector<IntPtr>(new StdVector { First = first, Last = first + count * 8 });
+                for (int index = 0; index < count; index++)
                 {
-                    if (IsValidItemEntity(cand))
+                    IntPtr candidate;
+                    if (candidates.Length == count) candidate = candidates[index];
+                    else if (!TryReadMemory<IntPtr>(first + index * 8, out candidate)) continue;
+                    if (TryValidateSlotCandidate(cached, candidate))
                     {
-                        itemSlotOffsets[elementAddr].Offset = offset;
-                        return cand;
+                        cached.Offset = (int)offset + index * 8;
+                        cached.ProbeAt = equipmentNow + EquipmentRefreshIntervalMs;
+                        return candidate;
                     }
                 }
+                offset += count * 8;
             }
-            itemSlotOffsets[elementAddr].ProbeAt = Environment.TickCount64 + EquipmentRefreshIntervalMs;
+            // Stagger failed scans without extending the original maximum discovery interval.
+            cached.ProbeAt = equipmentNow + 80 + (int)(((ulong)elementAddr.ToInt64() >> 4) % 21);
+            cached.ItemAddress = IntPtr.Zero;
             equipmentSnapshots.Remove(elementAddr);
             return IntPtr.Zero;
         }
@@ -3253,6 +3231,7 @@ namespace StashUtility
 
             try
             {
+                if (equipmentDiagnosticsEnabled) equipmentPerformance.Items++;
                 return Activator.CreateInstance(
                     typeof(Item),
                     BindingFlags.Instance | BindingFlags.NonPublic,
@@ -3350,6 +3329,7 @@ namespace StashUtility
                 var handleProp = Core.Process.GetType().GetProperty("Handle", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
                 this.handleObj = handleProp?.GetValue(Core.Process);
                 if (this.handleObj == null) return false;
+                ClearEquipmentMemoryDelegates();
 
                 var methods = this.handleObj.GetType().GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
                 this.readStdWStringMethod = methods.First(m => m.Name == "ReadStdWString" && m.GetParameters().Length == 1);
@@ -3373,19 +3353,21 @@ namespace StashUtility
 
         private T ReadMemory<T>(IntPtr address) where T : unmanaged
         {
+            if (equipmentDiagnosticsEnabled) equipmentPerformance.MemoryCalls++;
             if (!readMemoryMethods.TryGetValue(typeof(T), out var method))
             {
                 var genericMethod = this.handleObj.GetType()
                     .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
                     .First(m => m.Name == "ReadMemory" && m.IsGenericMethod && m.GetParameters().Length == 1);
-                method = genericMethod.MakeGenericMethod(typeof(T));
+                method = genericMethod.MakeGenericMethod(typeof(T)).CreateDelegate<MemoryReader<T>>(this.handleObj);
                 readMemoryMethods[typeof(T)] = method;
             }
-            return (T)method.Invoke(this.handleObj, new object[] { address });
+            return ((MemoryReader<T>)method)(address);
         }
 
         private bool TryReadMemory<T>(IntPtr address, out T result) where T : unmanaged
         {
+            if (equipmentDiagnosticsEnabled) equipmentPerformance.MemoryCalls++;
             try
             {
                 if (!tryReadMemoryMethods.TryGetValue(typeof(T), out var method))
@@ -3393,14 +3375,11 @@ namespace StashUtility
                     var genericMethod = this.handleObj.GetType()
                         .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
                         .First(m => m.Name == "TryReadMemory" && m.IsGenericMethod && m.GetParameters().Length == 2);
-                    method = genericMethod.MakeGenericMethod(typeof(T));
+                    method = genericMethod.MakeGenericMethod(typeof(T)).CreateDelegate<MemoryTryReader<T>>(this.handleObj);
                     tryReadMemoryMethods[typeof(T)] = method;
                 }
 
-                var args = new object[] { address, default(T) };
-                var success = (bool)method.Invoke(this.handleObj, args);
-                result = (T)args[1];
-                return success;
+                return ((MemoryTryReader<T>)method)(address, out result);
             }
             catch
             {
@@ -3411,15 +3390,16 @@ namespace StashUtility
 
         private T[] ReadStdVector<T>(StdVector nativeContainer) where T : unmanaged
         {
+            if (equipmentDiagnosticsEnabled) equipmentPerformance.Vectors++;
             if (!readStdVectorMethods.TryGetValue(typeof(T), out var method))
             {
                 var genericMethod = this.handleObj.GetType()
                     .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
                     .First(m => m.Name == "ReadStdVector" && m.IsGenericMethod);
-                method = genericMethod.MakeGenericMethod(typeof(T));
+                method = genericMethod.MakeGenericMethod(typeof(T)).CreateDelegate<VectorReader<T>>(this.handleObj);
                 readStdVectorMethods[typeof(T)] = method;
             }
-            return (T[])method.Invoke(this.handleObj, new object[] { nativeContainer });
+            return ((VectorReader<T>)method)(nativeContainer);
         }
 
         private static bool IsReadableAddress(IntPtr address)
@@ -3471,6 +3451,7 @@ namespace StashUtility
                 if (ImGui.InputText("##val", ref val, 128))
                 {
                     list[i] = val;
+                    RequestSettingsSave();
                 }
                 ImGui.SameLine();
                 if (ImGui.Button("Remove"))
@@ -3483,6 +3464,7 @@ namespace StashUtility
             if (toRemove >= 0)
             {
                 list.RemoveAt(toRemove);
+                RequestSettingsSave();
             }
 
         }
@@ -3764,28 +3746,31 @@ namespace StashUtility
             {
                 if (isGood) { profile.GoodModPatterns.Add(mod.Id); profile.BadModPatterns.Remove(mod.Id); profile.GodModPatterns.Remove(mod.Id); }
                 else { profile.GoodModPatterns.Remove(mod.Id); }
-                SaveSettings();
+                RequestSettingsSave();
             }
             ImGui.SameLine(100f);
             if (ImGui.Checkbox(PluginText.Label("stashutility.tablet.bad", "Bad", $"b_{tabId}_{mod.Id}"), ref isBad))
             {
                 if (isBad) { profile.BadModPatterns.Add(mod.Id); profile.GoodModPatterns.Remove(mod.Id); profile.GodModPatterns.Remove(mod.Id); }
                 else { profile.BadModPatterns.Remove(mod.Id); }
-                SaveSettings();
+                RequestSettingsSave();
             }
             ImGui.SameLine(190f);
             if (ImGui.Checkbox(PluginText.Label("stashutility.tablet.god", "God", $"god_{tabId}_{mod.Id}"), ref isGod))
             {
                 if (isGod) { profile.GodModPatterns.Add(mod.Id); profile.GoodModPatterns.Remove(mod.Id); profile.BadModPatterns.Remove(mod.Id); }
                 else { profile.GodModPatterns.Remove(mod.Id); }
-                SaveSettings();
+                RequestSettingsSave();
             }
             ImGuiHelper.ToolTip(PluginText.T("stashutility.tablet.god_tooltip", "A God mod immediately flags the tablet as Good/Great, ignoring any Bad mods."));
 
             if ((isGood || isGod) && mod.MinRoll != mod.MaxRoll)
             {
                 if (!profile.ModRequiredMinRolls.ContainsKey(mod.Id))
+                {
                     profile.ModRequiredMinRolls[mod.Id] = mod.MinRoll;
+                    RequestSettingsSave();
+                }
                 float requiredRoll = profile.ModRequiredMinRolls[mod.Id];
                 ImGui.Indent(20f);
                 int intRoll = (int)requiredRoll;
@@ -3794,7 +3779,7 @@ namespace StashUtility
                 if (ImGui.SliderInt($"Req. Min Roll##min_{tabId}_{mod.Id}", ref intRoll, (int)mod.MinRoll, (int)mod.MaxRoll, formatStr))
                 {
                     profile.ModRequiredMinRolls[mod.Id] = (float)intRoll;
-                    SaveSettings();
+                    RequestSettingsSave();
                 }
                 ImGui.Unindent(20f);
             }
