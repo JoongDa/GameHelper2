@@ -31,6 +31,7 @@
   "settings.update.download_failed": "Could not prepare the update. GameHelper is still running. Please try again.",
   "settings.update.failure_reason": "Reason: {0}",
   "settings.update.install": "Update and restart",
+  "settings.update.close": "Close",
   "settings.update.later": "Later",
   "settings.debug.imgui_demo": "ImGui Demo",
   "settings.tabs.general": "General",

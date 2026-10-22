@@ -37,7 +37,6 @@ namespace GameHelper.Settings
         private static string selectedSettingsPage = PluginManagerPageId;
         private static string pluginReloadStatus = string.Empty;
         private static bool startupUpdateCheckStarted;
-        private static bool manualUpdateCheck;
         private static bool updateCardVisible;
         private static bool updateCardOpen;
         private static bool updateCardPending;
@@ -49,6 +48,9 @@ namespace GameHelper.Settings
         private static Task<Launcher.ReleaseInfo>? updateCheckTask;
         private static Task? updateDownloadTask;
         private static Launcher.ReleaseInfo? latestRelease;
+        private static string? releaseNotesSource;
+        private static string? releaseNotesLanguage;
+        private static string localizedReleaseNotes = string.Empty;
         private static UpdateStatus updateStatus;
         private static string updateError = string.Empty;
         private static int updateDownloadProgress;
@@ -114,14 +116,6 @@ namespace GameHelper.Settings
             {
                 updateCardVisible = true;
                 updateCardLastHovered = ImGui.GetTime();
-                if (!updateBusy)
-                {
-                    ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
-                    if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-                    {
-                        StartUpdateCheck(true);
-                    }
-                }
             }
 
             ImGui.SameLine();
@@ -141,14 +135,13 @@ namespace GameHelper.Settings
             ImGui.EndMenuBar();
         }
 
-        private static void StartUpdateCheck(bool manual)
+        private static void StartUpdateCheck()
         {
             if (updateCheckTask != null || updateDownloadTask != null)
             {
                 return;
             }
 
-            manualUpdateCheck = manual;
             latestRelease = null;
             updateStatus = UpdateStatus.None;
             updateError = string.Empty;
@@ -173,7 +166,7 @@ namespace GameHelper.Settings
                 catch (Exception ex)
                 {
                     updateStatus = UpdateStatus.CheckFailed;
-                    updateError = manualUpdateCheck ? ex.Message : string.Empty;
+                    updateError = ex.Message;
                 }
             }
 
@@ -314,7 +307,7 @@ namespace GameHelper.Settings
                 }
 
                 if (!string.IsNullOrWhiteSpace(updateError)
-                    && ((updateStatus == UpdateStatus.CheckFailed && manualUpdateCheck) || updateStatus == UpdateStatus.DownloadFailed))
+                    && (updateStatus == UpdateStatus.CheckFailed || updateStatus == UpdateStatus.DownloadFailed))
                 {
                     ImGui.Spacing();
                     if (ImGui.TreeNode(L.Label("settings.update.error_details", "Error details", "UpdateErrorDetails")))
@@ -329,9 +322,17 @@ namespace GameHelper.Settings
             {
                 ImGui.Spacing();
                 ImGui.TextDisabled(L.T("settings.update.release_notes", "What's new"));
-                var notes = string.IsNullOrWhiteSpace(latestRelease.ReleaseNotes)
+                var languageCode = L.LanguageCode(L.CurrentLanguage);
+                if (releaseNotesSource != latestRelease.ReleaseNotes || releaseNotesLanguage != languageCode)
+                {
+                    releaseNotesSource = latestRelease.ReleaseNotes;
+                    releaseNotesLanguage = languageCode;
+                    localizedReleaseNotes = GameHelper.Localization.ReleaseNotes.SelectLanguage(releaseNotesSource, languageCode);
+                }
+
+                var notes = string.IsNullOrWhiteSpace(localizedReleaseNotes)
                     ? L.T("settings.update.no_release_notes", "No release notes were provided for this version.")
-                    : latestRelease.ReleaseNotes;
+                    : localizedReleaseNotes;
                 // Reserve scrollbar width when measuring so wrapped lines are never clipped.
                 var notesWidth = Math.Max(1f, ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ScrollbarSize);
                 var notesHeight = Math.Min(ImGui.CalcTextSize(notes, false, notesWidth).Y + 4f,
@@ -351,14 +352,17 @@ namespace GameHelper.Settings
                 && updateCheckTask == null
                 && !downloading
                 && (updateStatus == UpdateStatus.Available || updateStatus == UpdateStatus.DownloadFailed);
-            var actionLabel = canUpdate
-                ? L.Label("settings.update.install", "Update and restart", "InstallUpdate")
-                : L.Label("settings.update.check", "Check for updates", "CheckUpdate");
-            var laterLabel = L.Label("settings.update.later", "Later", "DeferUpdate");
+            var actionLabel = L.Label("settings.update.install", "Update and restart", "InstallUpdate");
+            var laterLabel = canUpdate
+                ? L.Label("settings.update.later", "Later", "DeferUpdate")
+                : L.Label("settings.update.close", "Close", "DeferUpdate");
             ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 7f);
             ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(12f, 7f));
-            var buttonWidth = ImGui.CalcTextSize(actionLabel, true).X + ImGui.CalcTextSize(laterLabel, true).X
-                + 48f + ImGui.GetStyle().ItemSpacing.X;
+            var buttonWidth = ImGui.CalcTextSize(laterLabel, true).X + 24f;
+            if (canUpdate)
+            {
+                buttonWidth += ImGui.CalcTextSize(actionLabel, true).X + 24f + ImGui.GetStyle().ItemSpacing.X;
+            }
             ImGui.SetCursorPosX(ImGui.GetCursorPosX() + Math.Max(0f, ImGui.GetContentRegionAvail().X - buttonWidth));
             ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
             if (ImGui.Button(laterLabel))
@@ -368,12 +372,12 @@ namespace GameHelper.Settings
             }
 
             ImGui.PopStyleColor();
-            ImGui.SameLine();
-            ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.04f, 0.40f, 0.86f, 1f));
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.10f, 0.48f, 0.96f, 1f));
-            ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.03f, 0.32f, 0.72f, 1f));
             if (canUpdate)
             {
+                ImGui.SameLine();
+                ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.04f, 0.40f, 0.86f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.10f, 0.48f, 0.96f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.03f, 0.32f, 0.72f, 1f));
                 if (ImGui.Button(actionLabel) && latestRelease is { } release)
                 {
                     updateError = string.Empty;
@@ -382,19 +386,9 @@ namespace GameHelper.Settings
                         release,
                         new Progress<int>(progress => Interlocked.Exchange(ref updateDownloadProgress, Math.Clamp(progress, 0, 100)))));
                 }
-            }
-            else
-            {
-                ImGui.BeginDisabled(updateCheckTask != null || downloading);
-                if (ImGui.Button(actionLabel))
-                {
-                    StartUpdateCheck(true);
-                }
-
-                ImGui.EndDisabled();
+                ImGui.PopStyleColor(3);
             }
 
-            ImGui.PopStyleColor(3);
             ImGui.PopStyleVar(2);
 
             updateCardSize = ImGui.GetWindowSize();
@@ -1349,7 +1343,7 @@ namespace GameHelper.Settings
                 if (!startupUpdateCheckStarted)
                 {
                     startupUpdateCheckStarted = true;
-                    StartUpdateCheck(false);
+                    StartUpdateCheck();
                 }
 
                 PollUpdateTasks();

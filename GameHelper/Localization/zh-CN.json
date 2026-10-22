@@ -31,6 +31,7 @@
   "settings.update.download_failed": "无法准备更新，GameHelper 仍在运行。请重试。",
   "settings.update.failure_reason": "原因：{0}",
   "settings.update.install": "更新并重启",
+  "settings.update.close": "关闭",
   "settings.update.later": "稍后",
   "settings.debug.imgui_demo": "ImGui 演示",
   "settings.tabs.general": "通用",
