@@ -40,7 +40,9 @@ namespace GameHelper.Settings
         private static bool manualUpdateCheck;
         private static bool updateCardVisible;
         private static bool updateCardOpen;
-        private static bool updateNameHovered;
+        private static bool updateCardPending;
+        private static bool updateCardPinned;
+        private static bool updateVersionHovered;
         private static double updateCardLastHovered;
         private static Vector2 updateCardAnchor;
         private static Vector2 updateCardSize = new(420f, 240f);
@@ -99,10 +101,16 @@ namespace GameHelper.Settings
             }
 
             var updateBusy = updateCheckTask != null || updateDownloadTask != null;
-            ImGui.TextColored(updateBusy ? ImGuiTheme.TextMuted : ImGuiTheme.Accent, $"GameHelper {Core.GetVersion()}");
-            updateNameHovered = ImGui.IsItemHovered(updateCardOpen ? ImGuiHoveredFlags.AllowWhenBlockedByPopup : ImGuiHoveredFlags.None);
+            var hasUpdate = latestRelease != null
+                && (updateStatus == UpdateStatus.Available || updateStatus == UpdateStatus.DownloadFailed);
+            var versionColor = hasUpdate ? new Vector4(1f, 0.30f, 0.30f, 1f)
+                : updateBusy ? ImGuiTheme.TextMuted : ImGuiTheme.Accent;
+            ImGui.TextUnformatted("GameHelper ");
+            ImGui.SameLine(0f, 0f);
+            ImGui.TextColored(versionColor, Core.GetVersion());
+            updateVersionHovered = ImGui.IsItemHovered(updateCardOpen ? ImGuiHoveredFlags.AllowWhenBlockedByPopup : ImGuiHoveredFlags.None);
             updateCardAnchor = new Vector2(ImGui.GetItemRectMin().X, ImGui.GetItemRectMax().Y + 2f);
-            if (updateNameHovered)
+            if (updateVersionHovered)
             {
                 updateCardVisible = true;
                 updateCardLastHovered = ImGui.GetTime();
@@ -110,28 +118,6 @@ namespace GameHelper.Settings
                 {
                     ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
                     if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-                    {
-                        StartUpdateCheck(true);
-                    }
-                }
-            }
-
-            if (latestRelease != null && (updateStatus == UpdateStatus.Available || updateStatus == UpdateStatus.DownloadFailed))
-            {
-                ImGui.SameLine();
-                ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, Vector2.Zero);
-                ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
-                ImGui.PushStyleColor(ImGuiCol.Text, updateBusy ? ImGuiTheme.TextMuted : ImGuiTheme.Success);
-                ImGui.ArrowButton("CheckUpdateIndicator", ImGuiDir.Up);
-                ImGui.PopStyleColor(2);
-                ImGui.PopStyleVar();
-                if (ImGui.IsItemHovered(updateCardOpen ? ImGuiHoveredFlags.AllowWhenBlockedByPopup : ImGuiHoveredFlags.None))
-                {
-                    updateNameHovered = true;
-                    updateCardVisible = true;
-                    updateCardLastHovered = ImGui.GetTime();
-                    ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
-                    if (!updateBusy && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
                     {
                         StartUpdateCheck(true);
                     }
@@ -179,6 +165,10 @@ namespace GameHelper.Settings
                     latestRelease = completedCheck.GetAwaiter().GetResult();
                     var hasUpdate = Update.IsNewerVersion(latestRelease.Version, Core.GetVersion());
                     updateStatus = hasUpdate ? UpdateStatus.Available : UpdateStatus.UpToDate;
+                    if (hasUpdate)
+                    {
+                        updateCardPending = true;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -210,6 +200,25 @@ namespace GameHelper.Settings
         {
             const string cardId = "###GameHelperUpdateCard";
             var isOpen = ImGui.IsPopupOpen(cardId);
+            if (updateCardPending)
+            {
+                if (ImGui.IsPopupOpen(string.Empty, ImGuiPopupFlags.AnyPopupId | ImGuiPopupFlags.AnyPopupLevel)
+                    && !isOpen)
+                {
+                    return;
+                }
+
+                updateCardPending = false;
+                updateCardVisible = true;
+                updateCardPinned = true;
+                ImGui.OpenPopup(cardId);
+                isOpen = true;
+            }
+            else if (!isOpen)
+            {
+                updateCardPinned = false;
+            }
+
             if (!updateCardVisible)
             {
                 if (isOpen && ImGui.BeginPopup(cardId))
@@ -224,7 +233,7 @@ namespace GameHelper.Settings
 
             if (!isOpen)
             {
-                if (!updateNameHovered || ImGui.IsPopupOpen(string.Empty, ImGuiPopupFlags.AnyPopupId | ImGuiPopupFlags.AnyPopupLevel))
+                if (!updateVersionHovered || ImGui.IsPopupOpen(string.Empty, ImGuiPopupFlags.AnyPopupId | ImGuiPopupFlags.AnyPopupLevel))
                 {
                     updateCardVisible = false;
                     updateCardOpen = false;
@@ -263,7 +272,7 @@ namespace GameHelper.Settings
             {
                 updateCardLastHovered = ImGui.GetTime();
             }
-            else if (!updateNameHovered && ImGui.GetTime() - updateCardLastHovered > 0.25)
+            else if (!updateCardPinned && !updateVersionHovered && ImGui.GetTime() - updateCardLastHovered > 0.25)
             {
                 updateCardVisible = false;
                 ImGui.CloseCurrentPopup();
@@ -325,7 +334,7 @@ namespace GameHelper.Settings
                     : latestRelease.ReleaseNotes;
                 // Reserve scrollbar width when measuring so wrapped lines are never clipped.
                 var notesWidth = Math.Max(1f, ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ScrollbarSize);
-                var notesHeight = Math.Min(ImGui.CalcTextSize(notes, false, notesWidth).Y + 8f,
+                var notesHeight = Math.Min(ImGui.CalcTextSize(notes, false, notesWidth).Y + 4f,
                     Math.Min(180f, viewport.WorkSize.Y * 0.25f));
                 ImGui.PushStyleColor(ImGuiCol.ChildBg, Vector4.Zero);
                 if (ImGui.BeginChild("UpdateReleaseNotes", new Vector2(0f, notesHeight)))
@@ -337,7 +346,6 @@ namespace GameHelper.Settings
                 ImGui.PopStyleColor();
             }
 
-            ImGui.Spacing();
             var downloading = updateDownloadTask != null;
             var canUpdate = latestRelease != null
                 && updateCheckTask == null
@@ -1362,7 +1370,7 @@ namespace GameHelper.Settings
                 Core.IsSettingsMenuOpen = isSettingsWindowVisible;
                 if (!isSettingsWindowVisible)
                 {
-                    updateCardVisible = false;
+                    updateCardVisible = updateCardPinned;
                     DrawUpdateCard();
                     continue;
                 }
@@ -1395,7 +1403,7 @@ namespace GameHelper.Settings
 
                 if (!isMainMenuExpanded)
                 {
-                    updateCardVisible = false;
+                    updateCardVisible = updateCardPinned;
                     ImGui.End();
                     DrawUpdateCard();
                     continue;
