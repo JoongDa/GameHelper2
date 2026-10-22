@@ -1,5 +1,13 @@
 {
   "plugin.description": "Utility for managing and filtering waystones and precursor/breach tablets in your stash.",
+  "stashutility.equipment.enable": "Enable Equipment Affix Tier Filter",
+  "stashutility.equipment.max_tier": "Maximum Affix Tier (T1 is best)",
+  "stashutility.equipment.tooltip": "Highlight magic/rare equipment when any explicit affix has a known tier at or below this value. Uses the existing good border style and color.",
+  "stashutility.equipment.data_ready": "Tier data: {0} | Bases: {1}",
+  "stashutility.equipment.data_missing": "Tier data is not ready. Generate Data/equipment_affix_tiers.json from decoded game tables; unknown items are not highlighted.",
+  "stashutility.equipment.reload": "Reload Affix Tier Data",
+  "stashutility.equipment.debug_tier": "Level {0} | T{1} | Match: {2}",
+  "stashutility.equipment.unknown": "Affix tier: Unknown (no exact base/mod mapping)",
   "stashutility.show_in_bg": "Show Overlay When Game in Background",
   "stashutility.show_in_bg_tooltip": "If checked, the waystone highlights will remain visible even when the game window is in the background.",
   "stashutility.enable_debug": "Enable Debug Settings",

@@ -1,4 +1,12 @@
 {
+  "stashutility.equipment.enable": "启用装备词缀 T 级筛选",
+  "stashutility.equipment.max_tier": "词缀最高允许 T 级（T1 最强）",
+  "stashutility.equipment.tooltip": "蓝色或稀有装备的任意一条显式词缀达到该 T 级或更好时高亮，沿用现有优质边框样式和颜色。",
+  "stashutility.equipment.data_ready": "词缀数据：{0} | 装备基础类型：{1}",
+  "stashutility.equipment.data_missing": "词缀 T 级数据未就绪。请从解码后的游戏数据生成 Data/equipment_affix_tiers.json；未知项不会高亮。",
+  "stashutility.equipment.reload": "重新加载词缀 T 级数据",
+  "stashutility.equipment.debug_tier": "词缀等级 {0} | T{1} | 达标：{2}",
+  "stashutility.equipment.unknown": "词缀 T 级：未知（无精确装备类型/Mod ID 映射）",
   "plugin.description": "用于管理和筛选仓库中的地图石、先驱者碑牌和裂隙碑牌。",
   "stashutility.show_in_bg": "游戏在后台时仍显示叠加层",
   "stashutility.show_in_bg_tooltip": "启用后，即使游戏窗口处于后台，也会继续显示地图石高亮。",

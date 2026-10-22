@@ -31,6 +31,8 @@ namespace StashUtility
         private readonly Dictionary<Type, MethodInfo> readMemoryMethods = new();
         private readonly Dictionary<Type, MethodInfo> readStdVectorMethods = new();
         private readonly Dictionary<Type, MethodInfo> tryReadMemoryMethods = new();
+        private readonly Data.EquipmentAffixTiers equipmentAffixTiers = new();
+        private string EquipmentAffixTierPath => Path.Combine(DllDirectory, "Data", "equipment_affix_tiers.json");
 
         private struct CoopDebugInfo
         {
@@ -211,6 +213,7 @@ namespace StashUtility
             }
 
             InitReflection();
+            this.equipmentAffixTiers.Load(this.EquipmentAffixTierPath);
         }
 
         public override void SaveSettings()
@@ -565,6 +568,19 @@ namespace StashUtility
                                 foreach (var mod in modsComp.ExplicitMods)
                                 {
                                     ImGui.Text($"{mod.name}: ({mod.values.value0}, {mod.values.value1})");
+                                    if (IsEquipment(lastHoveredWaystone.Path))
+                                    {
+                                        if (this.equipmentAffixTiers.TryGet(baseComp?.InternalName,
+                                            lastHoveredWaystone.Path, mod.name, out var modLevel, out var modTier))
+                                        {
+                                            bool matched = modTier <= Math.Clamp(Settings.MaxEquipmentAffixTier, 1, 100);
+                                            ImGui.Text(PluginText.F("stashutility.equipment.debug_tier", "Level {0} | T{1} | Match: {2}", modLevel, modTier, matched));
+                                        }
+                                        else
+                                        {
+                                            ImGui.Text(PluginText.T("stashutility.equipment.unknown", "Affix tier: Unknown (no exact base/mod mapping)"));
+                                        }
+                                    }
                                 }
                                 ImGui.TreePop();
                             }
@@ -631,6 +647,22 @@ namespace StashUtility
                         ImGui.TextColored(new Vector4(1, 1, 0, 1), PluginText.T("stashutility.debug.hover_hint", "Hover over a waystone in your Stash Tab to inspect it."));
                     }
                 }
+            }
+
+            ImGui.Checkbox(PluginText.T("stashutility.equipment.enable", "Enable Equipment Affix Tier Filter"), ref Settings.EnableEquipmentAffixTierFilter);
+            if (Settings.EnableEquipmentAffixTierFilter)
+            {
+                ImGui.Indent();
+                ImGui.SliderInt(PluginText.T("stashutility.equipment.max_tier", "Maximum Affix Tier (T1 is best)"), ref Settings.MaxEquipmentAffixTier, 1, 20);
+                ImGuiHelper.ToolTip(PluginText.T("stashutility.equipment.tooltip", "Highlight magic/rare equipment when any explicit affix has a known tier at or below this value. Uses the existing good border style and color."));
+                if (this.equipmentAffixTiers.Ready)
+                    ImGui.Text(PluginText.F("stashutility.equipment.data_ready", "Tier data: {0} | Bases: {1}", this.equipmentAffixTiers.SourceVersion, this.equipmentAffixTiers.BaseCount));
+                else
+                    ImGui.TextWrapped(PluginText.T("stashutility.equipment.data_missing", "Tier data is not ready. Generate Data/equipment_affix_tiers.json from decoded game tables; unknown items are not highlighted."));
+                if (!string.IsNullOrEmpty(this.equipmentAffixTiers.Error)) ImGui.TextWrapped(this.equipmentAffixTiers.Error);
+                if (ImGui.Button(PluginText.T("stashutility.equipment.reload", "Reload Affix Tier Data")))
+                    this.equipmentAffixTiers.Load(this.EquipmentAffixTierPath);
+                ImGui.Unindent();
             }
 
             ImGui.Checkbox(PluginText.T("stashutility.enable_waystone_manager", "Enable Waystone Manager"), ref Settings.EnableWaystoneManager);
@@ -1278,7 +1310,7 @@ namespace StashUtility
 
         public override void DrawUI()
         {
-            if (!Settings.EnableWaystoneManager && !Settings.EnableTabletManager && !Settings.EnableJewelManager && !Settings.EnableDebugProbe && !Settings.EnableMerchantPurchasePanel) return;
+            if (!Settings.EnableWaystoneManager && !Settings.EnableTabletManager && !Settings.EnableJewelManager && !Settings.EnableEquipmentAffixTierFilter && !Settings.EnableDebugProbe && !Settings.EnableMerchantPurchasePanel) return;
 
             if (!Settings.ShowOverlayInBackground && !Core.Process.Foreground)
             {
@@ -1307,7 +1339,7 @@ namespace StashUtility
                 DrawDebugOverlay();
             }
 
-            if (Settings.EnableWaystoneManager || Settings.EnableTabletManager || Settings.EnableJewelManager)
+            if (Settings.EnableWaystoneManager || Settings.EnableTabletManager || Settings.EnableJewelManager || Settings.EnableEquipmentAffixTierFilter || Settings.EnableDebugProbe)
             {
                 bool isCoopMode = Core.GHSettings.EnableControllerMode && gameUi.LeftPanel.Address != IntPtr.Zero;
 
@@ -2176,11 +2208,8 @@ namespace StashUtility
             bool isTablet = (!string.IsNullOrEmpty(name) && name.Contains("Tablet")) || path.Contains("TowerAugment", StringComparison.OrdinalIgnoreCase) || path.Contains("Tablet", StringComparison.OrdinalIgnoreCase);
             bool isJewel = (!string.IsNullOrEmpty(name) && (name.Contains("Jewel") || name == "Sapphire" || name == "Ruby" || name == "Emerald" || name == "Diamond" || name.Contains("Time-Lost"))) || path.Contains("Metadata/Items/Jewels", StringComparison.OrdinalIgnoreCase) || path.Contains("Jewel", StringComparison.OrdinalIgnoreCase) || (!string.IsNullOrEmpty(internalNameStr) && internalNameStr.Contains("Jewel", StringComparison.OrdinalIgnoreCase));
 
-            if (!isWaystone && !isTablet && !isJewel) return;
-
-            if (isWaystone && !Settings.EnableWaystoneManager) return;
-            if (isTablet && !Settings.EnableTabletManager) return;
-            if (isJewel && !Settings.EnableJewelManager) return;
+            bool isEquipment = IsEquipment(path);
+            if (!isWaystone && !isTablet && !isJewel && !isEquipment) return;
 
             if (Settings.EnableDebugProbe && !freezeHoveredWaystone)
             {
@@ -2191,6 +2220,32 @@ namespace StashUtility
                     lastHoveredWaystone = item;
                 }
             }
+
+            if (isEquipment)
+            {
+                if (!Settings.EnableEquipmentAffixTierFilter || !this.equipmentAffixTiers.Ready ||
+                    !item.TryGetComponent<Mods>(out var equipmentMods) ||
+                    (equipmentMods.Rarity != Rarity.Magic && equipmentMods.Rarity != Rarity.Rare)) return;
+
+                int maxTier = Math.Clamp(Settings.MaxEquipmentAffixTier, 1, 100);
+                foreach (var mod in equipmentMods.ExplicitMods)
+                {
+                    if (this.equipmentAffixTiers.TryGet(internalNameStr, path, mod.name, out _, out var affixTier) && affixTier <= maxTier)
+                    {
+                        float equipmentScale = size.X / 52.0f;
+                        float thickness = Math.Max(1.5f, Settings.BorderThickness - 0.5f);
+                        float inset = Settings.BorderMargin * equipmentScale + thickness / 2.0f;
+                        AddStyledRect(ImGui.GetBackgroundDrawList(), pos + new Vector2(inset),
+                            pos + size - new Vector2(inset), ImGuiHelper.Color(Settings.GoodColor), thickness, Settings.FrameStyleGood);
+                        break;
+                    }
+                }
+                return;
+            }
+
+            if (isWaystone && !Settings.EnableWaystoneManager) return;
+            if (isTablet && !Settings.EnableTabletManager) return;
+            if (isJewel && !Settings.EnableJewelManager) return;
 
             var rarity = GameHelper.RemoteEnums.Rarity.Normal;
             if (item.TryGetComponent<Mods>(out var modsComponent))
@@ -2672,6 +2727,17 @@ namespace StashUtility
                 dl.AddTriangleFilled(topTip, topTip + new Vector2(-arrowSize / 2, arrowSize), topTip + new Vector2(arrowSize / 2, arrowSize), ImGuiHelper.Color(arrowCol));
                 dl.AddTriangle(topTip, topTip + new Vector2(-arrowSize / 2, arrowSize), topTip + new Vector2(arrowSize / 2, arrowSize), 0xFF000000, Math.Max(1.0f, 1.5f * scale));
             }
+        }
+
+        private static bool IsEquipment(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return false;
+            return path.StartsWith("Metadata/Items/Weapons/", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("Metadata/Items/Armours/", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("Metadata/Items/Rings/", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("Metadata/Items/Amulets/", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("Metadata/Items/Belts/", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("Metadata/Items/Quivers/", StringComparison.OrdinalIgnoreCase);
         }
 
         private void AddStyledRect(ImDrawListPtr dl, Vector2 min, Vector2 max, uint color, float thickness, int style)

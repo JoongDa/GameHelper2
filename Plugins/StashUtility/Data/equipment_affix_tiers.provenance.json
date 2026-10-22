@@ -1,0 +1,108 @@
+{
+  "source": "Official PoE2 patch CDN",
+  "cdnUrl": "https://patch-poe2.poecdn.com/0.5.5.4.2/",
+  "patchVersion": "0.5.5.4.2",
+  "queryProtocol": "patch.pathofexile2.com:13060, bytes 01 06",
+  "extractedAtUtc": "2026-10-22T08:17:08.507903+00:00",
+  "extractor": "pathofexile-dat@16.0.1",
+  "schemaVersion": 7,
+  "schemaSha256": "bc20b89453d307ae2782f4aac9bf3899a28fe448a82f02d60d96499b2b921d03",
+  "files": {
+    "BaseItemTypes.json": {
+      "sha256": "b3324def7c4b80c023c7edf783dec5cdb73e600f225dd92462e53fea1939532a",
+      "rows": 5496
+    },
+    "ItemClasses.json": {
+      "sha256": "ac30210f314cd3eeb24b23ea53aa32c99d68ffb4bcbbcf4af5f5504068d40cb9",
+      "rows": 118
+    },
+    "ModFamily.json": {
+      "sha256": "c728cf279a74c6f97367812c9c3fac7b5c6f3aaee7032e1a43f7d37dcb56a77e",
+      "rows": 6126
+    },
+    "Mods.json": {
+      "sha256": "e68e0c33578c1cd5c23ac7849e55ade6cc748284ea49125a9ae57eb9bae7f3b4",
+      "rows": 16784
+    },
+    "ModType.json": {
+      "sha256": "74076a0ae50389ea3dbecc24d5677470ec5f218ac33a03e64850d48788185c58",
+      "rows": 12574
+    },
+    "Tags.json": {
+      "sha256": "1ff4eb9992a24e33c1b5eb189794c0e6a84b4869af9ef73d000b7a7623558ef6",
+      "rows": 1339
+    }
+  },
+  "schemaPackage": "pathofexile-dat-schema@8.0.0",
+  "schemaFormatVersion": 7,
+  "schemaUrl": "https://github.com/poe-tool-dev/dat-schema/releases/download/latest/schema.min.json",
+  "schemaSavedFile": "schema.min.json",
+  "schemaEvidence": {
+    "initialCliFetch": "CLI fetched SCHEMA_URL independently and enforced response.version===SCHEMA_VERSION (7). Initial HTTP response bytes were not captured.",
+    "savedSchema": "Separately downloaded from the same SCHEMA_URL immediately before initial extraction.",
+    "deterministicReplay": "replay-with-pinned-schema.mjs uses saved schema bytes in actual CLI exportTables, cached official bundles, and denies all other fetch requests.",
+    "replayOutput": "schema-replay/tables/English",
+    "allSixTableSha256Identical": true,
+    "replayedAtUtc": "2026-10-22T08:19:24.528710+00:00",
+    "versionRelationship": "npm package semantic version 8.0.0 exports SCHEMA_VERSION=7, the decoded schema file format version, not a game or schema package version."
+  },
+  "commands": {
+    "install": "npm ci --ignore-scripts --no-audit --no-fund",
+    "originalExtract": "node ./node_modules/pathofexile-dat/dist/cli/run.js",
+    "pinnedReplay": "node replay-with-pinned-schema.mjs"
+  },
+  "mapping": {
+    "file": "equipment_affix_tiers.json",
+    "sha256": "a61889acad834b98663dad4b61ae7b94e5d2ccf4ee03fb51c8ebe8810305cf04",
+    "bytes": 510076,
+    "algorithm": "toolkit-context-level-desc-v1",
+    "tierConvention": "T1Best",
+    "equipmentBases": 1836,
+    "uniqueAffixPools": 70,
+    "modLevels": 2586
+  },
+  "validation": {
+    "baseId": "Metadata/Items/Armours/Boots/FourBootsInt2Endgame",
+    "poe2dbPage": "https://poe2db.tw/us/Boots_int",
+    "retrievedUtc": "2026-10-22T08:17:07.169068+00:00",
+    "pageSha256": "acd773d7effb788e14a189a9222ac69f4410dec80ef04dcabe82b32237920eac",
+    "referenceClientPatch": "Not declared in this page snapshot",
+    "referenceAlgorithm": "Within each pool, group by ModGenerationTypeID + ModFamilyList[0], rank distinct Level descending, index+1. DropChance is not part of tier ranking.",
+    "normalPoolRows": 125,
+    "allGenerationFamilyLevelRowsMatch": true,
+    "all125ComputedTiersMatch": true,
+    "samples": {
+      "IncreasedLife8": {
+        "Level": 54,
+        "Tier": 2,
+        "IdentityEvidence": "Unique raw Mod ID in the matched base pool for generation + first family + level"
+      },
+      "Intelligence6": {
+        "Level": 55,
+        "Tier": 3,
+        "IdentityEvidence": "Unique raw Mod ID in the matched base pool for generation + first family + level"
+      },
+      "FireResist5": {
+        "Level": 48,
+        "Tier": 4,
+        "IdentityEvidence": "Unique raw Mod ID in the matched base pool for generation + first family + level"
+      },
+      "IncreasedMana5": {
+        "Level": 33,
+        "Tier": 5,
+        "IdentityEvidence": "Unique raw Mod ID in the matched base pool for generation + first family + level"
+      }
+    },
+    "atMaxTier3Matches": [
+      "IncreasedLife8",
+      "Intelligence6"
+    ],
+    "liveClientTested": false
+  },
+  "limitations": [
+    "The local game client version was not observed; sourceVersion identifies the official CDN snapshot.",
+    "Tier numbers use the selected per-base ModType/prefix/suffix grouping with distinct Level descending. First-family grouping is not equivalent for all pools.",
+    "Independent audit found 425 (unique tag pool, Mod ID) differences between ModType and first-family ranking across 427 tag pools, caused by distinct mod types sharing an exclusion family; these are not treated as confirmed game errors.",
+    "52 Item-domain HiddenItem bases are excluded; all supported ordinary equipment classes were covered."
+  ]
+}
