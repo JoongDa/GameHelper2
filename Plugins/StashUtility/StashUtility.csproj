@@ -18,6 +18,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Update="Assets\hongwu_coin.png" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
   </ItemGroup>
 
@@ -36,6 +37,7 @@
   </ItemGroup>
 
   <Target Name="CopyFiles" AfterTargets="Build">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\Assets\hongwu_coin.png" DestinationFolder="..\..\GameHelper\$(OutDir)Plugins\$(ProjectName)\Assets" SkipUnchangedFiles="true" />
     <Copy Condition="Exists('$(MSBuildProjectDirectory)\Data\equipment_affix_tiers.json')" SourceFiles="$(MSBuildProjectDirectory)\Data\equipment_affix_tiers.json" DestinationFolder="..\..\GameHelper\$(OutDir)Plugins\$(ProjectName)\Data" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(OutDir)$(TargetName)$(TargetExt);$(OutDir)$(TargetName).pdb;" DestinationFolder="..\..\GameHelper\$(OutDir)Plugins\$(ProjectName)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(MSBuildProjectDirectory)\Data\jewel_mod_ranges.json" DestinationFolder="..\..\GameHelper\$(OutDir)Plugins\$(ProjectName)\Data" SkipUnchangedFiles="true" />

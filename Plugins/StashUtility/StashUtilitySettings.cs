@@ -16,6 +16,11 @@ namespace StashUtility
         // Equipment explicit affix tiers (T1 is best); uses offline data only.
         public bool EnableEquipmentAffixTierFilter = false;
         public int MaxEquipmentAffixTier = 3;
+        public bool FilterEquipmentGreatCount = false;
+        public int MinEquipmentGreatMods = 2;
+        public bool FilterEquipmentGreatTargets = false;
+        public List<string> EquipmentGreatModTypes = new();
+        public Vector4 EquipmentGreatArrowColor = new(10f / 255f, 212f / 255f, 7f / 255f, 1.0f);
 
         // UI path for the waystone stash tab
         public string PathString = "2,0,0,0,1,1,45,0,1";
@@ -72,6 +77,7 @@ namespace StashUtility
         public int MaxGreatExplicitMods = 10;
         public int GreatIndicatorPosition = 0; // 0: Top-Left, 1: Top-Right, 2: Bottom-Left, 3: Bottom-Right
         public float GreatIndicatorSize = 20f;
+        public int GreatStyle = 1; // Shared by all GREAT markers: 0 arrow, 1 Hongwu coin artwork
 
         // GREAT Conditions (Tablets)
         public bool FilterTabletGreat = false;

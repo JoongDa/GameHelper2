@@ -15,6 +15,27 @@ StashUtility is a plugin for **GameHelper2** designed to manage, filter, and hig
   configured maximum tier. It uses the existing good border style and color.
   The hovered-item inspector displays mapped mod levels and tiers. Missing data,
   bases, and Mod IDs remain Unknown and never trigger this filter.
+  Under **Equipment GREAT Highlight Conditions**, enable either qualifying-affix
+  count (default minimum: 2) or selected target affix types, or both. They share
+  the normal tier threshold and use OR: either condition adds a GREAT marker.
+  **Overlay Visual Settings > GREAT Style** selects an arrow or the bundled
+  Hongwu Tongbao coin artwork for all equipment, waystone, tablet and jewel GREAT
+  markers (coin by default). Arrows retain each type's configured color; coins
+  retain their original artwork colors. Both styles share marker size/position.
+  Target selection matches source ModTypes across their Mod IDs. Melee, minion,
+  projectile and spell skill-level targets internally include their equipment
+  variants, verified against identical full stat vectors in the bundled patch.
+  Tier checks always use the current equipment base's own pool; target aliases
+  never merge tier ladders. Previously selected variants remain compatible.
+  Both GREAT conditions default off; turning them off retains normal highlighting.
+  Search and add targets in the existing settings panel. Common type names are
+  localized; other types use readable source names and remain searchable by ID.
+  The inspector reports the qualifying count and matched target. Equipment has
+  its own adjustable arrow color under **Overlay Visual Settings**. Coin artwork
+  keeps its original copper colors and transparent square hole. It is loaded once
+  on enable and released on disable; missing/invalid artwork falls back to an arrow.
+  `Assets/hongwu_coin.png` is a 256x256 transparent, AI-generated Ming-style concept
+  illustration, not a museum photograph or a certified numismatic reproduction.
 
 - **Waystone & Tablet Integration**: Automatically detects, parses, and highlights qualifying Waystones and Tablets inside active stash tabs (standard/quad/waystone layouts) and your character's inventory.
 - **Granular Waystone Filter Criteria**:
@@ -35,11 +56,12 @@ StashUtility is a plugin for **GameHelper2** designed to manage, filter, and hig
   - Configure a minimum number of good mods to ignore bad mods (`MinGoodModsToIgnoreBad`).
 - **Compile-Time Mod Database**:
   - Completely refactored to compile the mod definitions in C# (`Data/ModDatabase`).
-  - No runtime JSON files required, minimizing dependencies.
+  - Waystone/tablet definitions use the compiled database; equipment affix tiers
+    require the bundled `Data/equipment_affix_tiers.json`.
 - **Highly Customizable Visuals**:
   - Set custom border thickness and style (**Solid**, **Dashed**, or **Dotted**) for good vs. bad highlights.
   - Draw optional triangle corner indicators representing item rarity (Normal, Magic, Rare, Unique).
-  - Draw a distinct, configurable **GREAT Arrow** (custom color, size, and position: Top-Left, Top-Right, Bottom-Left, Bottom-Right) on items that meet the Great thresholds.
+  - Draw a configurable **GREAT Marker** (arrow or Hongwu coin, with shared size and position: Top-Left, Top-Right, Bottom-Left, Bottom-Right) on items that meet the Great thresholds. Arrow colors are configurable for each item type.
   - Hides Normal (white) waystones completely if desired.
 - **Developer Debug Tools**:
   - **UI Path Explorer**: Interactively click through indices in the game's UI hierarchy, highlight the active node or all child boundaries in-game, and resolve container offsets.
@@ -56,7 +78,15 @@ StashUtility is a plugin for **GameHelper2** designed to manage, filter, and hig
    GameHelper/
    └── Plugins/
        └── StashUtility/
-           └── StashUtility.dll
+           ├── StashUtility.dll
+           ├── Assets/
+           │   └── hongwu_coin.png
+           ├── Data/
+           │   ├── equipment_affix_tiers.json
+           │   └── jewel_mod_ranges.json
+           └── Localization/
+               ├── en-US.json
+               └── zh-CN.json
    ```
 3. Restart GameHelper2. The plugin will be recognized and loaded automatically.
 
@@ -80,9 +110,12 @@ StashUtility is a plugin for **GameHelper2** designed to manage, filter, and hig
 
 The bundled snapshot was extracted from the official PoE2 patch CDN version
 `0.5.5.4.2` on 2026-10-22. It covers 1,836 equipment bases and 2,586 eligible mod
-levels in 70 deduplicated affix pools (about 0.5 MB). Input hashes, source details
+levels in 70 deduplicated affix pools (about 0.6 MB, including 1,391 Mod ID to
+ModType associations covering 195 types). Input hashes, source details
 and validation results are in `Data/equipment_affix_tiers.provenance.json`.
 The plugin does not verify the attached client's version: use matching game data.
+Older mappings without `ModTypes` still support normal and count filtering;
+target filtering remains unavailable until complete type data is loaded.
 
 To refresh, use `pathofexile-dat@16.0.1` in a separate working directory and the
 included `affix_tables.config.json` (update its patch version first). It downloads
