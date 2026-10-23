@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <NoWarn>1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\GameHelper\GameHelper.csproj">
+      <Private>false</Private>
+      <CopyLocalSatelliteAssemblies>false</CopyLocalSatelliteAssemblies>
+    </ProjectReference>
+    <Compile Include="..\PickupHelper\Native.cs" Link="Shared\PickupNative.cs" />
+    <Compile Include="..\StashUtility\Data\EquipmentAffixTiers.cs" Link="Shared\EquipmentAffixTiers.cs" />
+    <Content Include="..\StashUtility\Data\equipment_affix_tiers.json" Link="Data\equipment_affix_tiers.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Localization\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="README.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="DeployCraftingHelper" AfterTargets="Build">
+    <PropertyGroup>
+      <_CraftingRuntime>$(MSBuildProjectDirectory)\..\..\GameHelper\bin\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\Plugins\CraftingHelper</_CraftingRuntime>
+    </PropertyGroup>
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(_CraftingRuntime)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(_CraftingRuntime)" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+    <Copy SourceFiles="$(TargetDir)Data\equipment_affix_tiers.json" DestinationFolder="$(_CraftingRuntime)\Data" SkipUnchangedFiles="true" />
+    <ItemGroup>
+      <_CraftingText Include="$(MSBuildProjectDirectory)\Localization\*.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_CraftingText)" DestinationFolder="$(_CraftingRuntime)\Localization" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\README.md" DestinationFolder="$(_CraftingRuntime)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>
