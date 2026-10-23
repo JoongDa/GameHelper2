@@ -11,6 +11,7 @@ namespace StashUtility
     using GameOffsets.Natives;
     using ImGuiNET;
     using Newtonsoft.Json;
+    using Newtonsoft.Json.Linq;
     using System;
     using System.Collections.Generic;
     using System.IO;
@@ -32,7 +33,10 @@ namespace StashUtility
         private readonly Dictionary<Type, MethodInfo> readStdVectorMethods = new();
         private readonly Dictionary<Type, MethodInfo> tryReadMemoryMethods = new();
         private readonly Data.EquipmentAffixTiers equipmentAffixTiers = new();
+        private string equipmentModSearchTerm = string.Empty;
         private string EquipmentAffixTierPath => Path.Combine(DllDirectory, "Data", "equipment_affix_tiers.json");
+        private string GreatCoinPath => Path.Combine(DllDirectory, "Assets", "hongwu_coin.png");
+        private IntPtr greatCoinTexture;
 
         private struct CoopDebugInfo
         {
@@ -85,6 +89,33 @@ namespace StashUtility
 
         public override void OnDisable()
         {
+            if (this.greatCoinTexture == IntPtr.Zero) return;
+            try
+            {
+                Core.Overlay?.RemoveImage(this.GreatCoinPath);
+            }
+            catch
+            {
+                // The renderer may already have been disposed during shutdown.
+            }
+            finally
+            {
+                this.greatCoinTexture = IntPtr.Zero;
+            }
+        }
+
+        private void LoadGreatCoin()
+        {
+            if (this.greatCoinTexture != IntPtr.Zero || Core.Overlay == null || !File.Exists(this.GreatCoinPath)) return;
+            try
+            {
+                Core.Overlay.AddOrGetImagePointer(this.GreatCoinPath, false, out this.greatCoinTexture, out _, out _);
+            }
+            catch
+            {
+                // Keep the GREAT marker visible with an arrow if the optional image cannot load.
+                this.greatCoinTexture = IntPtr.Zero;
+            }
         }
 
         public override void OnEnable(bool isGameOpened)
@@ -95,7 +126,10 @@ namespace StashUtility
                 try
                 {
                     var content = File.ReadAllText(SettingPathname);
-                    Settings = JsonConvert.DeserializeObject<StashUtilitySettings>(content) ?? new StashUtilitySettings();
+                    var saved = JObject.Parse(content);
+                    Settings = saved.ToObject<StashUtilitySettings>() ?? new StashUtilitySettings();
+                    if (saved["GreatStyle"] == null && saved["EquipmentGreatStyle"]?.Type == JTokenType.Integer)
+                        Settings.GreatStyle = saved.Value<int>("EquipmentGreatStyle");
                 }
                 catch
                 {
@@ -107,6 +141,11 @@ namespace StashUtility
             {
                 Settings.ScanEndOffset = 0x600;
             }
+
+            Settings.EquipmentGreatModTypes = (Settings.EquipmentGreatModTypes ?? new())
+                .Where(type => !string.IsNullOrWhiteSpace(type)).Select(Data.EquipmentAffixTiers.NormalizeTargetType)
+                .Distinct(StringComparer.Ordinal).ToList();
+            Settings.GreatStyle = Math.Clamp(Settings.GreatStyle, 0, 1);
 
             if (Settings.TabletProfiles == null)
             {
@@ -214,6 +253,7 @@ namespace StashUtility
 
             InitReflection();
             this.equipmentAffixTiers.Load(this.EquipmentAffixTierPath);
+            this.LoadGreatCoin();
         }
 
         public override void SaveSettings()
@@ -555,6 +595,32 @@ namespace StashUtility
                         {
                             ImGui.Text($"Rarity: {modsComp.Rarity}");
 
+                            if (IsEquipment(lastHoveredWaystone.Path))
+                            {
+                                var equipmentMatch = this.equipmentAffixTiers.Evaluate(baseComp?.InternalName,
+                                    lastHoveredWaystone.Path, modsComp.ExplicitMods.Select(mod => mod.name),
+                                    Settings.MaxEquipmentAffixTier, Settings.EquipmentGreatModTypes);
+                                bool countMatched = EquipmentGreatCountMatched(equipmentMatch.MatchingCount);
+                                bool targetMatched = EquipmentGreatTargetMatched(equipmentMatch.TargetType);
+                                bool filterActive = Settings.EnableEquipmentAffixTierFilter &&
+                                    (modsComp.Rarity == Rarity.Magic || modsComp.Rarity == Rarity.Rare);
+                                string verdict = !Settings.EnableEquipmentAffixTierFilter
+                                    ? PluginText.T("stashutility.equipment.result_disabled", "Equipment filter disabled")
+                                    : modsComp.Rarity != Rarity.Magic && modsComp.Rarity != Rarity.Rare
+                                        ? PluginText.T("stashutility.equipment.result_ineligible", "Not magic/rare equipment")
+                                        : countMatched || targetMatched
+                                            ? PluginText.T("stashutility.equipment.result_great", "GREAT")
+                                            : equipmentMatch.MatchingCount > 0
+                                                ? PluginText.T("stashutility.equipment.result_normal", "Normal highlight")
+                                                : PluginText.T("stashutility.equipment.result_none", "No highlight");
+                                ImGui.Text(PluginText.F("stashutility.equipment.debug_result", "Equipment: {0} | T{1} or better: {2}", verdict,
+                                    Math.Clamp(Settings.MaxEquipmentAffixTier, 1, 100), equipmentMatch.MatchingCount));
+                                if (filterActive && countMatched)
+                                    ImGui.Text(PluginText.F("stashutility.equipment.debug_count_reason", "Count condition: {0} / {1}", equipmentMatch.MatchingCount, Math.Clamp(Settings.MinEquipmentGreatMods, 1, 100)));
+                                if (filterActive && targetMatched)
+                                    ImGui.Text(PluginText.F("stashutility.equipment.debug_target_reason", "Target condition: {0}", EquipmentModTypeName(equipmentMatch.TargetType)));
+                            }
+
                             if (modsComp.ImplicitMods.Count > 0 && ImGui.TreeNode("Implicit Mods"))
                             {
                                 foreach (var mod in modsComp.ImplicitMods)
@@ -649,21 +715,7 @@ namespace StashUtility
                 }
             }
 
-            ImGui.Checkbox(PluginText.T("stashutility.equipment.enable", "Enable Equipment Affix Tier Filter"), ref Settings.EnableEquipmentAffixTierFilter);
-            if (Settings.EnableEquipmentAffixTierFilter)
-            {
-                ImGui.Indent();
-                ImGui.SliderInt(PluginText.T("stashutility.equipment.max_tier", "Maximum Affix Tier (T1 is best)"), ref Settings.MaxEquipmentAffixTier, 1, 20);
-                ImGuiHelper.ToolTip(PluginText.T("stashutility.equipment.tooltip", "Highlight magic/rare equipment when any explicit affix has a known tier at or below this value. Uses the existing good border style and color."));
-                if (this.equipmentAffixTiers.Ready)
-                    ImGui.Text(PluginText.F("stashutility.equipment.data_ready", "Tier data: {0} | Bases: {1}", this.equipmentAffixTiers.SourceVersion, this.equipmentAffixTiers.BaseCount));
-                else
-                    ImGui.TextWrapped(PluginText.T("stashutility.equipment.data_missing", "Tier data is not ready. Generate Data/equipment_affix_tiers.json from decoded game tables; unknown items are not highlighted."));
-                if (!string.IsNullOrEmpty(this.equipmentAffixTiers.Error)) ImGui.TextWrapped(this.equipmentAffixTiers.Error);
-                if (ImGui.Button(PluginText.T("stashutility.equipment.reload", "Reload Affix Tier Data")))
-                    this.equipmentAffixTiers.Load(this.EquipmentAffixTierPath);
-                ImGui.Unindent();
-            }
+            DrawEquipmentSettings();
 
             ImGui.Checkbox(PluginText.T("stashutility.enable_waystone_manager", "Enable Waystone Manager"), ref Settings.EnableWaystoneManager);
             ImGuiHelper.ToolTip(PluginText.T("stashutility.enable_waystone_manager_tooltip", "Enables or disables highlighting of waystones."));
@@ -1142,14 +1194,25 @@ namespace StashUtility
                 ImGui.Combo(PluginText.T("stashutility.bad_border_style", "Bad Highlight Border Style"), ref Settings.FrameStyleBad, borderStyles, borderStyles.Length);
                 ImGui.Combo(PluginText.T("stashutility.good_border_style", "Good Highlight Border Style"), ref Settings.FrameStyleGood, borderStyles, borderStyles.Length);
 
+                string[] greatStyles =
+                {
+                    PluginText.T("stashutility.great_style_arrow", "Arrow"),
+                    PluginText.T("stashutility.great_style_coin", "Hongwu Coin")
+                };
+                if (ImGui.Combo(PluginText.Label("stashutility.great_style", "GREAT Style", "great_style"),
+                    ref Settings.GreatStyle, greatStyles, greatStyles.Length)) SaveSettings();
+                ImGuiHelper.ToolTip(PluginText.T("stashutility.great_style_tooltip", "Applies to equipment, waystones, tablets and jewels. Arrows use each type's configured color; coins keep the artwork's original colors."));
+                if (Settings.GreatStyle == 1 && this.greatCoinTexture == IntPtr.Zero)
+                    ImGui.TextWrapped(PluginText.T("stashutility.great_coin_missing", "Coin artwork is unavailable. GREAT markers use arrows until the plugin is re-enabled with the artwork installed."));
+
                 string[] arrowPositions = { 
                     PluginText.T("stashutility.pos_top_left", "Top-Left"), 
                     PluginText.T("stashutility.pos_top_right", "Top-Right"), 
                     PluginText.T("stashutility.pos_bottom_left", "Bottom-Left"), 
                     PluginText.T("stashutility.pos_bottom_right", "Bottom-Right") 
                 };
-                ImGui.Combo(PluginText.T("stashutility.great_arrow_position", "GREAT Arrow Position"), ref Settings.GreatIndicatorPosition, arrowPositions, arrowPositions.Length);
-                ImGui.SliderFloat(PluginText.T("stashutility.great_arrow_size", "GREAT Arrow Size"), ref Settings.GreatIndicatorSize, 5f, 40f);
+                ImGui.Combo(PluginText.T("stashutility.great_arrow_position", "GREAT Marker Position"), ref Settings.GreatIndicatorPosition, arrowPositions, arrowPositions.Length);
+                ImGui.SliderFloat(PluginText.T("stashutility.great_arrow_size", "GREAT Marker Size"), ref Settings.GreatIndicatorSize, 5f, 40f);
 
                 ImGui.SeparatorText(PluginText.T("stashutility.colors_section", "Colors"));
                 if (ImGui.ColorEdit4(PluginText.T("stashutility.good_color", "Waystone Good Highlight Color"), ref Settings.GoodColor)) SaveSettings();
@@ -1158,14 +1221,123 @@ namespace StashUtility
                 if (ImGui.ColorEdit4(PluginText.T("stashutility.tablet_bad_color", "Tablet Bad Highlight Color"), ref Settings.TabletBadColor)) SaveSettings();
                 if (ImGui.ColorEdit4(PluginText.T("stashutility.jewel_good_color", "Jewel Good Highlight Color"), ref Settings.JewelGoodColor)) SaveSettings();
                 if (ImGui.ColorEdit4(PluginText.T("stashutility.jewel_bad_color", "Jewel Bad Highlight Color"), ref Settings.JewelBadColor)) SaveSettings();
-                if (ImGui.ColorEdit4(PluginText.T("stashutility.waystone_great_color", "Waystone GREAT Arrow Color"), ref Settings.ColorGreat)) SaveSettings();
-                if (ImGui.ColorEdit4(PluginText.T("stashutility.tablet_great_color", "Tablet GREAT Arrow Color"), ref Settings.TabletColorGreat)) SaveSettings();
-                if (ImGui.ColorEdit4(PluginText.T("stashutility.jewel_great_color", "Jewel GREAT Arrow Color"), ref Settings.JewelColorGreat)) SaveSettings();
+                if (Settings.GreatStyle == 0)
+                {
+                    if (ImGui.ColorEdit4(PluginText.T("stashutility.waystone_great_color", "Waystone GREAT Arrow Color"), ref Settings.ColorGreat)) SaveSettings();
+                    if (ImGui.ColorEdit4(PluginText.T("stashutility.tablet_great_color", "Tablet GREAT Arrow Color"), ref Settings.TabletColorGreat)) SaveSettings();
+                    if (ImGui.ColorEdit4(PluginText.T("stashutility.jewel_great_color", "Jewel GREAT Arrow Color"), ref Settings.JewelColorGreat)) SaveSettings();
+                    if (ImGui.ColorEdit4(PluginText.T("stashutility.equipment.great_color", "Equipment GREAT Arrow Color"), ref Settings.EquipmentGreatArrowColor)) SaveSettings();
+                }
                 ImGui.ColorEdit4(PluginText.T("stashutility.rare_color", "Rare Rarity Color"), ref Settings.RareRarityColor);
                 ImGui.ColorEdit4(PluginText.T("stashutility.magic_color", "Magic Rarity Color"), ref Settings.MagicRarityColor);
                 ImGui.ColorEdit4(PluginText.T("stashutility.normal_color", "Normal Rarity Color"), ref Settings.NormalRarityColor);
             }
         }
+
+        private void DrawEquipmentSettings()
+        {
+            if (ImGui.Checkbox(PluginText.T("stashutility.equipment.enable", "Enable Equipment Manager"), ref Settings.EnableEquipmentAffixTierFilter)) SaveSettings();
+            if (!Settings.EnableEquipmentAffixTierFilter) return;
+
+            ImGui.Indent();
+            if (ImGui.CollapsingHeader(PluginText.T("stashutility.equipment.normal_header", "Equipment Highlight Criteria (Normal)")))
+            {
+                if (ImGui.SliderInt(PluginText.T("stashutility.equipment.max_tier", "Maximum Affix Tier (T1 is best)"), ref Settings.MaxEquipmentAffixTier, 1, 20)) SaveSettings();
+                ImGuiHelper.ToolTip(PluginText.T("stashutility.equipment.tooltip", "Highlight magic/rare equipment when any explicit affix has a known tier at or below this value. Uses the existing good border style and color."));
+                if (this.equipmentAffixTiers.Ready)
+                    ImGui.Text(PluginText.F("stashutility.equipment.data_ready", "Tier data: {0} | Bases: {1}", this.equipmentAffixTiers.SourceVersion, this.equipmentAffixTiers.BaseCount));
+                else
+                    ImGui.TextWrapped(PluginText.T("stashutility.equipment.data_missing", "Tier data is not ready. Generate Data/equipment_affix_tiers.json from decoded game tables; unknown items are not highlighted."));
+                if (!string.IsNullOrEmpty(this.equipmentAffixTiers.Error)) ImGui.TextWrapped(this.equipmentAffixTiers.Error);
+                if (ImGui.Button(PluginText.T("stashutility.equipment.reload", "Reload Affix Tier Data")))
+                    this.equipmentAffixTiers.Load(this.EquipmentAffixTierPath);
+            }
+
+            if (ImGui.CollapsingHeader(PluginText.T("stashutility.equipment.great_header", "Equipment GREAT Highlight Conditions")))
+            {
+                ImGui.TextWrapped(PluginText.F("stashutility.equipment.great_hint", "Uses T{0} or better from the normal criteria. Either enabled condition marks equipment as GREAT.", Math.Clamp(Settings.MaxEquipmentAffixTier, 1, 100)));
+                if (ImGui.Checkbox(PluginText.Label("stashutility.equipment.great_count", "Filter Great Min Tier Affix Count", "equipment_great_count"), ref Settings.FilterEquipmentGreatCount)) SaveSettings();
+                ImGuiHelper.ToolTip(PluginText.T("stashutility.equipment.great_count_tooltip", "Only explicit mods that meet the current affix tier threshold count toward this minimum."));
+                if (Settings.FilterEquipmentGreatCount)
+                {
+                    ImGui.Indent();
+                    ImGui.SetNextItemWidth(150f);
+                    if (ImGui.SliderInt(PluginText.Label("stashutility.equipment.great_min_count", "Min Great Explicit Mods", "equipment_great_min_count"), ref Settings.MinEquipmentGreatMods, 1, 10)) SaveSettings();
+                    ImGui.Unindent();
+                }
+
+                if (ImGui.Checkbox(PluginText.Label("stashutility.equipment.great_targets", "Filter Great Equipment Affix Manager", "equipment_great_targets"), ref Settings.FilterEquipmentGreatTargets)) SaveSettings();
+                if (Settings.FilterEquipmentGreatTargets)
+                {
+                    ImGui.Indent();
+                    if (!this.equipmentAffixTiers.TypesReady)
+                        ImGui.TextWrapped(PluginText.T("stashutility.equipment.types_missing", "Target affix data is not ready. Update and reload the tier data; count filtering remains available."));
+                    else if (ImGui.BeginCombo(PluginText.T("stashutility.equipment.add_target", "Add Target Affix"), PluginText.T("stashutility.equipment.select_target", "Search and select...")))
+                    {
+                        ImGui.InputTextWithHint("##equipment_mod_search", PluginText.T("stashutility.search_database", "Search database..."), ref equipmentModSearchTerm, 128);
+                        foreach (var type in this.equipmentAffixTiers.TargetTypeIds)
+                        {
+                            string displayName = EquipmentModTypeName(type);
+                            if (Settings.EquipmentGreatModTypes.Contains(type) ||
+                                (!displayName.Contains(equipmentModSearchTerm, StringComparison.OrdinalIgnoreCase) &&
+                                 !type.Contains(equipmentModSearchTerm, StringComparison.OrdinalIgnoreCase))) continue;
+                            if (ImGui.Selectable($"{displayName}##equipment_type_{type}"))
+                            {
+                                Settings.EquipmentGreatModTypes.Add(type);
+                                SaveSettings();
+                            }
+                        }
+                        ImGui.EndCombo();
+                    }
+
+                    var listStyle = ImGui.GetStyle();
+                    float rowHeight = ImGui.GetFrameHeight() + listStyle.ItemSpacing.Y;
+                    float listHeight = rowHeight * Math.Clamp(Settings.EquipmentGreatModTypes.Count, 1, 6)
+                        + 2f * (listStyle.WindowPadding.Y + listStyle.ChildBorderSize) + listStyle.ScrollbarSize;
+                    if (ImGui.BeginChild("EquipmentGreatTargetsList", new Vector2(0, listHeight),
+                        ImGuiChildFlags.Borders, ImGuiWindowFlags.HorizontalScrollbar))
+                    {
+                        if (Settings.EquipmentGreatModTypes.Count == 0)
+                            ImGui.TextDisabled(PluginText.T("stashutility.equipment.targets_empty", "No target affixes selected."));
+                        for (int i = 0; i < Settings.EquipmentGreatModTypes.Count; i++)
+                        {
+                            string type = Settings.EquipmentGreatModTypes[i];
+                            ImGui.PushID($"equipment_target_{i}");
+                            if (ImGui.SmallButton(PluginText.T("stashutility.equipment.remove_target", "Remove")))
+                            {
+                                Settings.EquipmentGreatModTypes.RemoveAt(i);
+                                SaveSettings();
+                                ImGui.PopID();
+                                break;
+                            }
+                            ImGui.SameLine();
+                            ImGui.TextUnformatted(EquipmentModTypeName(type));
+                            if (this.equipmentAffixTiers.TypesReady && !this.equipmentAffixTiers.TargetTypeIds.Contains(type))
+                            {
+                                ImGui.SameLine();
+                                ImGui.TextDisabled(PluginText.T("stashutility.equipment.target_unavailable", "(not in current data)"));
+                            }
+                            ImGui.PopID();
+                        }
+                    }
+                    ImGui.EndChild();
+                    ImGui.Unindent();
+                }
+            }
+            ImGui.Unindent();
+        }
+
+        private string EquipmentModTypeName(string type)
+        {
+            string readableName = System.Text.RegularExpressions.Regex.Replace(type, "(?<=[a-z0-9])(?=[A-Z])", " ");
+            return PluginText.T($"stashutility.equipment.mod_type.{type.ToLowerInvariant()}", readableName);
+        }
+
+        private bool EquipmentGreatCountMatched(int count) =>
+            Settings.FilterEquipmentGreatCount && count >= Math.Clamp(Settings.MinEquipmentGreatMods, 1, 100);
+
+        private bool EquipmentGreatTargetMatched(string type) =>
+            Settings.FilterEquipmentGreatTargets && !string.IsNullOrEmpty(type);
 
         private IntPtr GetExplorerRootAddress()
         {
@@ -2227,19 +2399,18 @@ namespace StashUtility
                     !item.TryGetComponent<Mods>(out var equipmentMods) ||
                     (equipmentMods.Rarity != Rarity.Magic && equipmentMods.Rarity != Rarity.Rare)) return;
 
-                int maxTier = Math.Clamp(Settings.MaxEquipmentAffixTier, 1, 100);
-                foreach (var mod in equipmentMods.ExplicitMods)
-                {
-                    if (this.equipmentAffixTiers.TryGet(internalNameStr, path, mod.name, out _, out var affixTier) && affixTier <= maxTier)
-                    {
-                        float equipmentScale = size.X / 52.0f;
-                        float thickness = Math.Max(1.5f, Settings.BorderThickness - 0.5f);
-                        float inset = Settings.BorderMargin * equipmentScale + thickness / 2.0f;
-                        AddStyledRect(ImGui.GetBackgroundDrawList(), pos + new Vector2(inset),
-                            pos + size - new Vector2(inset), ImGuiHelper.Color(Settings.GoodColor), thickness, Settings.FrameStyleGood);
-                        break;
-                    }
-                }
+                var equipmentMatch = this.equipmentAffixTiers.Evaluate(internalNameStr, path,
+                    equipmentMods.ExplicitMods.Select(mod => mod.name), Settings.MaxEquipmentAffixTier,
+                    Settings.EquipmentGreatModTypes);
+                if (equipmentMatch.MatchingCount == 0) return;
+
+                float equipmentScale = size.X / 52.0f;
+                float thickness = Math.Max(1.5f, Settings.BorderThickness - 0.5f);
+                float inset = Settings.BorderMargin * equipmentScale + thickness / 2.0f;
+                AddStyledRect(ImGui.GetBackgroundDrawList(), pos + new Vector2(inset),
+                    pos + size - new Vector2(inset), ImGuiHelper.Color(Settings.GoodColor), thickness, Settings.FrameStyleGood);
+                if (EquipmentGreatCountMatched(equipmentMatch.MatchingCount) || EquipmentGreatTargetMatched(equipmentMatch.TargetType))
+                    DrawGreatIndicator(pos, size, thickness, Settings.EquipmentGreatArrowColor, false);
                 return;
             }
 
@@ -2707,26 +2878,33 @@ namespace StashUtility
 
             if (isGreat)
             {
-                float arrowSize = Settings.GreatIndicatorSize * scale;
-                float padding = 4.0f * scale;
-                float borderPad = activeBorderThickness > 0 ? activeBorderThickness : 0f;
-                float totalPadX = margin + borderPad + padding;
-                float totalPadY = margin + borderPad + padding;
-
-                Vector2 topTip = Settings.GreatIndicatorPosition switch
-                {
-                    0 => pos + new Vector2(totalPadX + (arrowSize / 2), totalPadY), // Top-Left
-                    1 => pos + new Vector2(size.X - totalPadX - (arrowSize / 2), totalPadY + (Settings.ShowRarityBorder ? Settings.RarityIndicatorSize : 0f)), // Top-Right
-                    2 => pos + new Vector2(totalPadX + (arrowSize / 2), size.Y - totalPadY - arrowSize), // Bottom-Left
-                    3 => pos + new Vector2(size.X - totalPadX - (arrowSize / 2), size.Y - totalPadY - arrowSize), // Bottom-Right
-                    _ => pos + new Vector2(totalPadX + (arrowSize / 2), totalPadY)
-                };
-
-                var dl = ImGui.GetBackgroundDrawList();
                 Vector4 arrowCol = isJewel ? Settings.JewelColorGreat : (isTablet ? Settings.TabletColorGreat : Settings.ColorGreat);
-                dl.AddTriangleFilled(topTip, topTip + new Vector2(-arrowSize / 2, arrowSize), topTip + new Vector2(arrowSize / 2, arrowSize), ImGuiHelper.Color(arrowCol));
-                dl.AddTriangle(topTip, topTip + new Vector2(-arrowSize / 2, arrowSize), topTip + new Vector2(arrowSize / 2, arrowSize), 0xFF000000, Math.Max(1.0f, 1.5f * scale));
+                DrawGreatIndicator(pos, size, activeBorderThickness, arrowCol, Settings.ShowRarityBorder);
             }
+        }
+
+        private void DrawGreatIndicator(Vector2 pos, Vector2 size, float borderThickness, Vector4 color, bool showRarityCorner)
+        {
+            float scale = size.X / 52.0f;
+            float arrowSize = Settings.GreatIndicatorSize * scale;
+            float padding = Settings.BorderMargin * scale + Math.Max(0f, borderThickness) + 4.0f * scale;
+            Vector2 topTip = Settings.GreatIndicatorPosition switch
+            {
+                0 => pos + new Vector2(padding + arrowSize / 2, padding),
+                1 => pos + new Vector2(size.X - padding - arrowSize / 2, padding + (showRarityCorner ? Settings.RarityIndicatorSize : 0f)),
+                2 => pos + new Vector2(padding + arrowSize / 2, size.Y - padding - arrowSize),
+                3 => pos + new Vector2(size.X - padding - arrowSize / 2, size.Y - padding - arrowSize),
+                _ => pos + new Vector2(padding + arrowSize / 2, padding)
+            };
+            var dl = ImGui.GetBackgroundDrawList();
+            if (Settings.GreatStyle == 1 && this.greatCoinTexture != IntPtr.Zero)
+            {
+                Vector2 coinMin = topTip - new Vector2(arrowSize / 2, 0);
+                dl.AddImage(this.greatCoinTexture, coinMin, coinMin + new Vector2(arrowSize), Vector2.Zero, Vector2.One, 0xFFFFFFFF);
+                return;
+            }
+            dl.AddTriangleFilled(topTip, topTip + new Vector2(-arrowSize / 2, arrowSize), topTip + new Vector2(arrowSize / 2, arrowSize), ImGuiHelper.Color(color));
+            dl.AddTriangle(topTip, topTip + new Vector2(-arrowSize / 2, arrowSize), topTip + new Vector2(arrowSize / 2, arrowSize), 0xFF000000, Math.Max(1.0f, 1.5f * scale));
         }
 
         private static bool IsEquipment(string path)
