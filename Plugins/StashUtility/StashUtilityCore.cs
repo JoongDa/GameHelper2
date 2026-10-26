@@ -37,6 +37,9 @@ namespace StashUtility
         private string EquipmentAffixTierPath => Path.Combine(DllDirectory, "Data", "equipment_affix_tiers.json");
         private string GreatCoinPath => Path.Combine(DllDirectory, "Assets", "hongwu_coin.png");
         private IntPtr greatCoinTexture;
+        private string GreatSwordPath => Path.Combine(DllDirectory, "Assets", "goujian_sword.png");
+        private IntPtr greatSwordTexture;
+        private float greatSwordAspect = 2f / 3f;
 
         private struct CoopDebugInfo
         {
@@ -89,6 +92,12 @@ namespace StashUtility
 
         public override void OnDisable()
         {
+            if (this.greatSwordTexture != IntPtr.Zero)
+            {
+                try { Core.Overlay?.RemoveImage(this.GreatSwordPath); }
+                catch { /* Renderer may already be disposed during shutdown. */ }
+                finally { this.greatSwordTexture = IntPtr.Zero; }
+            }
             if (this.greatCoinTexture == IntPtr.Zero) return;
             try
             {
@@ -145,7 +154,7 @@ namespace StashUtility
             Settings.EquipmentGreatModTypes = (Settings.EquipmentGreatModTypes ?? new())
                 .Where(type => !string.IsNullOrWhiteSpace(type)).Select(Data.EquipmentAffixTiers.NormalizeTargetType)
                 .Distinct(StringComparer.Ordinal).ToList();
-            Settings.GreatStyle = Math.Clamp(Settings.GreatStyle, 0, 1);
+            Settings.GreatStyle = Math.Clamp(Settings.GreatStyle, 0, 2);
 
             if (Settings.TabletProfiles == null)
             {
@@ -254,6 +263,15 @@ namespace StashUtility
             InitReflection();
             this.equipmentAffixTiers.Load(this.EquipmentAffixTierPath);
             this.LoadGreatCoin();
+            if (this.greatSwordTexture == IntPtr.Zero && Core.Overlay != null && File.Exists(this.GreatSwordPath))
+            {
+                try
+                {
+                    Core.Overlay.AddOrGetImagePointer(this.GreatSwordPath, false, out this.greatSwordTexture, out var width, out var height);
+                    if (height > 0) this.greatSwordAspect = (float)width / height;
+                }
+                catch { this.greatSwordTexture = IntPtr.Zero; }
+            }
         }
 
         public override void SaveSettings()
@@ -1197,13 +1215,17 @@ namespace StashUtility
                 string[] greatStyles =
                 {
                     PluginText.T("stashutility.great_style_arrow", "Arrow"),
-                    PluginText.T("stashutility.great_style_coin", "Hongwu Coin")
+                    PluginText.T("stashutility.great_style_coin", "Hongwu Coin"),
+                    PluginText.T("stashutility.great_style_sword", "Sword of Goujian")
                 };
                 if (ImGui.Combo(PluginText.Label("stashutility.great_style", "GREAT Style", "great_style"),
                     ref Settings.GreatStyle, greatStyles, greatStyles.Length)) SaveSettings();
-                ImGuiHelper.ToolTip(PluginText.T("stashutility.great_style_tooltip", "Applies to equipment, waystones, tablets and jewels. Arrows use each type's configured color; coins keep the artwork's original colors."));
+                ImGuiHelper.ToolTip(PluginText.T("stashutility.great_style_tooltip", "Applies to equipment, waystones, tablets and jewels. Arrows use each type's configured color; coin and sword artwork keeps its original colors."));
                 if (Settings.GreatStyle == 1 && this.greatCoinTexture == IntPtr.Zero)
                     ImGui.TextWrapped(PluginText.T("stashutility.great_coin_missing", "Coin artwork is unavailable. GREAT markers use arrows until the plugin is re-enabled with the artwork installed."));
+
+                if (Settings.GreatStyle == 2 && this.greatSwordTexture == IntPtr.Zero)
+                    ImGui.TextWrapped(PluginText.T("stashutility.great_sword_missing", "Sword artwork is unavailable. GREAT markers use arrows until the plugin is re-enabled with the artwork installed."));
 
                 string[] arrowPositions = { 
                     PluginText.T("stashutility.pos_top_left", "Top-Left"), 
@@ -2897,6 +2919,14 @@ namespace StashUtility
                 _ => pos + new Vector2(padding + arrowSize / 2, padding)
             };
             var dl = ImGui.GetBackgroundDrawList();
+            if (Settings.GreatStyle == 2 && this.greatSwordTexture != IntPtr.Zero)
+            {
+                // Marker size controls total height; keep the artwork's aspect ratio.
+                var swordSize = new Vector2(arrowSize * this.greatSwordAspect, arrowSize);
+                Vector2 swordMin = topTip - new Vector2(swordSize.X / 2, 0);
+                dl.AddImage(this.greatSwordTexture, swordMin, swordMin + swordSize, Vector2.Zero, Vector2.One, 0xFFFFFFFF);
+                return;
+            }
             if (Settings.GreatStyle == 1 && this.greatCoinTexture != IntPtr.Zero)
             {
                 Vector2 coinMin = topTip - new Vector2(arrowSize / 2, 0);

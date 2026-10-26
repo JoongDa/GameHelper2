@@ -77,7 +77,7 @@ namespace StashUtility
         public int MaxGreatExplicitMods = 10;
         public int GreatIndicatorPosition = 0; // 0: Top-Left, 1: Top-Right, 2: Bottom-Left, 3: Bottom-Right
         public float GreatIndicatorSize = 20f;
-        public int GreatStyle = 1; // Shared by all GREAT markers: 0 arrow, 1 Hongwu coin artwork
+        public int GreatStyle = 1; // Shared by all GREAT markers: 0 arrow, 1 Hongwu coin artwork, 2 Sword of Goujian
 
         // GREAT Conditions (Tablets)
         public bool FilterTabletGreat = false;

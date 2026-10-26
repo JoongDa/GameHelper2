@@ -193,3 +193,7 @@ The repository uses GitHub Actions to automate releases. When you push a new tag
 3. Gathers the compiled `.dll` and `.pdb`.
 4. Packages them into `StashUtility.zip` and uploads them to a newly created GitHub Release.
 
+
+### Sword of Goujian marker (test version)
+
+Select **Overlay Visual Settings > GREAT Style > Sword of Goujian** for all GREAT markers. Marker size controls total image height; the image aspect ratio is preserved. This preliminary AI reconstruction references the [Hubei Provincial Museum photograph](https://hbww.org.cn/zgzb/p/4694.html); it retains a halo and is not an exact photographic cutout. `Assets/goujian_sword.png` was made with the built-in image tool, requesting a faithful upright transparent cutout with original slender proportions, colors and diamond patterns, without redesign or glow. Arrow and Hongwu Coin remain available.
