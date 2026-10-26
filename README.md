@@ -1,5 +1,7 @@
 # GameHelper2
 
+**[插件来源与鸣谢 / Plugin Sources & Credits](PLUGIN_SOURCES.md)**
+
 GameHelper2 is a Windows x64 .NET overlay application with a plugin-based architecture. The main executable reads data from a running game process, renders an ImGui/ClickableTransparentOverlay UI, and loads plugins from the runtime `Plugins` directory.
 
 This guide is written for users who want to build and run the project from Visual Studio without using command-line tools.
