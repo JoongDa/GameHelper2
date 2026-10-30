@@ -6,6 +6,29 @@ GameHelper2 is a Windows x64 .NET overlay application with a plugin-based archit
 
 This guide is written for users who want to build and run the project from Visual Studio without using command-line tools.
 
+## Update Plugin Sources
+
+Double-click **`update-plugins.bat`** to check the core upstream and six external
+plugin repositories. Requires Git 2.38+ and the .NET SDK used by this solution.
+
+The updater preserves local edits and configuration, merges changes in an isolated
+workspace, and builds the whole solution before applying source changes. Conflicting
+external plugins keep their current version and are listed in the report. A core
+conflict or failed build stops the update. Source updates remain uncommitted; rebuild
+the working solution in Visual Studio to refresh its runnable output.
+
+- Double-click **`restore-plugins.bat`** to undo the last applied source update.
+  Restore stops if you have edited an affected file since that update.
+- For a preview only, run `update-plugins.bat -CheckOnly`.
+- Reports, build logs, and backups are saved under `.plugin-sync/` (ignored by Git).
+- `plugin-sync.json` records upstream addresses and the last merged commits. Commit
+  its changes together with updated sources. `PLUGIN_SOURCES.md` remains the short
+  public credits page.
+
+RunecraftHelper is monitored even when its local source is missing; the updater
+reports that condition without treating it as synchronized. CraftingHelper stays
+locally maintained. The old `pull-external-plugins.bat` opens the same updater.
+
 ## Required Tools
 
 Install these items before opening the project:

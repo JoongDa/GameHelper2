@@ -1,0 +1,53 @@
+{
+    "version":  1,
+    "core":  {
+                 "name":  "Core + bundled plugins",
+                 "repository":  "https://github.com/Gordin/GameHelper2.git",
+                 "branch":  "main",
+                 "commit":  "46cc3bb2822de1205986412bcc2afcc7c27e921d"
+             },
+    "plugins":  [
+                    {
+                        "name":  "AmanamuVoidAlert",
+                        "path":  "Plugins/AmanamuVoidAlert",
+                        "repository":  "https://github.com/MordWraith/AmanamuVoidAlert.git",
+                        "branch":  "master",
+                        "commit":  "af84ecf4196ef155d29dba8d1fa990a21d0b6b6e"
+                    },
+                    {
+                        "name":  "Autopot",
+                        "path":  "Plugins/Autopot",
+                        "repository":  "https://github.com/MordWraith/Autopot.git",
+                        "branch":  "master",
+                        "commit":  "8944835cef14acf20fe8721a13643e209a5d81b6"
+                    },
+                    {
+                        "name":  "LootTracker",
+                        "path":  "Plugins/LootTracker",
+                        "repository":  "https://github.com/yokkenUA/LootTracker.git",
+                        "branch":  "main",
+                        "commit":  "f54d2ba19c4b7db5382ec4926e11a2707b75aa2d"
+                    },
+                    {
+                        "name":  "SekhemaHelper",
+                        "path":  "Plugins/SekhemaHelper",
+                        "repository":  "https://github.com/yokkenUA/SekhemaHelper.git",
+                        "branch":  "main",
+                        "commit":  "0be2acfa3eae48ecb045d87514b6cdc9971018d4"
+                    },
+                    {
+                        "name":  "StashUtility",
+                        "path":  "Plugins/StashUtility",
+                        "repository":  "https://github.com/AlexanderHel/StashUtility.git",
+                        "branch":  "main",
+                        "commit":  "ee632ba9601b3dfb12970340d8c1fff3698b5ac0"
+                    },
+                    {
+                        "name":  "RunecraftHelper",
+                        "path":  "Plugins/RunecraftHelper",
+                        "repository":  "https://github.com/yokkenUA/RunecraftHelper.git",
+                        "branch":  "main",
+                        "commit":  "d5bcd0f96be7cf9a8327365ec84ce8cdeab0906a"
+                    }
+                ]
+}
