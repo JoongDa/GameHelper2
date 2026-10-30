@@ -1344,10 +1344,21 @@ namespace LootValue
                 }
             }
 
-            if (string.IsNullOrWhiteSpace(itemName)) return false;
-
             var modLines = ItemModHelper.GetModLines(item);
             var price = PoeNinjaPriceFetcher.GetPrice(itemName, modLines, internalName, fullItemPath);
+            // Gems can have generic/localized base names and internal names that differ from
+            // their market names. Both providers index gem icons by their English names.
+            if (price == null && fullItemPath.Contains("/Gems/", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var key in ArtKeyVariants(artBasename))
+                {
+                    if (!PoeNinjaPriceFetcher.TryResolveDisplayName(key, out var gemName) ||
+                        PoeNinjaPriceFetcher.IsGenericLookupName(gemName)) continue;
+
+                    price = PoeNinjaPriceFetcher.GetPrice(gemName);
+                    if (price != null) break;
+                }
+            }
             if (price == null) return false;
 
             var stack = item.TryGetComponent<Stack>(out var stackComp) && stackComp.Count > 1 ? stackComp.Count : 1;
