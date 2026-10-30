@@ -2909,22 +2909,29 @@ namespace StashUtility
         {
             float scale = size.X / 52.0f;
             float arrowSize = Settings.GreatIndicatorSize * scale;
+            bool drawSword = Settings.GreatStyle == 2 && this.greatSwordTexture != IntPtr.Zero;
+            // UV bounds fit the bundled sword, excluding the wide transparent margins.
+            var swordUvMin = new Vector2(0.43f, 0.015f);
+            var swordUvMax = new Vector2(0.57f, 0.985f);
+            float markerHeight = drawSword ? arrowSize * 3f : arrowSize;
+            float markerWidth = drawSword
+                ? markerHeight * this.greatSwordAspect * (swordUvMax.X - swordUvMin.X) / (swordUvMax.Y - swordUvMin.Y)
+                : arrowSize;
             float padding = Settings.BorderMargin * scale + Math.Max(0f, borderThickness) + 4.0f * scale;
             Vector2 topTip = Settings.GreatIndicatorPosition switch
             {
-                0 => pos + new Vector2(padding + arrowSize / 2, padding),
-                1 => pos + new Vector2(size.X - padding - arrowSize / 2, padding + (showRarityCorner ? Settings.RarityIndicatorSize : 0f)),
-                2 => pos + new Vector2(padding + arrowSize / 2, size.Y - padding - arrowSize),
-                3 => pos + new Vector2(size.X - padding - arrowSize / 2, size.Y - padding - arrowSize),
-                _ => pos + new Vector2(padding + arrowSize / 2, padding)
+                0 => pos + new Vector2(padding + markerWidth / 2, padding),
+                1 => pos + new Vector2(size.X - padding - markerWidth / 2, padding + (showRarityCorner ? Settings.RarityIndicatorSize : 0f)),
+                2 => pos + new Vector2(padding + markerWidth / 2, size.Y - padding - markerHeight),
+                3 => pos + new Vector2(size.X - padding - markerWidth / 2, size.Y - padding - markerHeight),
+                _ => pos + new Vector2(padding + markerWidth / 2, padding)
             };
             var dl = ImGui.GetBackgroundDrawList();
-            if (Settings.GreatStyle == 2 && this.greatSwordTexture != IntPtr.Zero)
+            if (drawSword)
             {
-                // Marker size controls total height; keep the artwork's aspect ratio.
-                var swordSize = new Vector2(arrowSize * this.greatSwordAspect, arrowSize);
+                var swordSize = new Vector2(markerWidth, markerHeight);
                 Vector2 swordMin = topTip - new Vector2(swordSize.X / 2, 0);
-                dl.AddImage(this.greatSwordTexture, swordMin, swordMin + swordSize, Vector2.Zero, Vector2.One, 0xFFFFFFFF);
+                dl.AddImage(this.greatSwordTexture, swordMin, swordMin + swordSize, swordUvMin, swordUvMax, 0xFFFFFFFF);
                 return;
             }
             if (Settings.GreatStyle == 1 && this.greatCoinTexture != IntPtr.Zero)
