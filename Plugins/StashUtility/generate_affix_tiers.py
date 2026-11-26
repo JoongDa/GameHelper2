@@ -163,9 +163,13 @@ def generate(tables, source_version, toolkit_mods=None):
         bases[base_id] = tag_profiles[tag_key]
     if not bases or not any(profiles.values()):
         raise ValueError("No supported equipment bases/affix pools; check table schema")
+    # Keep the exact source ModType name. IDs are opaque identifiers, so removing
+    # their numeric suffix is not a safe way to identify an affix type.
+    referenced_ids = sorted({mod_id for pool in profiles.values() for mod_id in pool})
     return {"SchemaVersion": 1, "Algorithm": ALGORITHM, "SourceVersion": source_version,
             "TierConvention": "T1Best", "Levels": {key: mod["level"] for key, mod in sorted(mods.items())},
-            "Bases": dict(sorted(bases.items())), "Profiles": dict(sorted(profiles.items()))}
+            "Bases": dict(sorted(bases.items())), "Profiles": dict(sorted(profiles.items())),
+            "ModTypes": {mod_id: mods[mod_id]["group"] for mod_id in referenced_ids}}
 
 
 def main():
@@ -198,7 +202,8 @@ def main():
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         parser.exit(1, f"Cannot generate affix tiers: {error}\n")
     print(f"Generated {len(result['Bases'])} bases, {len(result['Profiles'])} pools, "
-          f"{len(result['Levels'])} mod levels; data version {args.source_version}")
+          f"{len(result['Levels'])} mod levels, {len(set(result['ModTypes'].values()))} mod types; "
+          f"data version {args.source_version}")
 
 
 if __name__ == "__main__":

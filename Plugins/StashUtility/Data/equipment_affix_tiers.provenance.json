@@ -53,13 +53,15 @@
   },
   "mapping": {
     "file": "equipment_affix_tiers.json",
-    "sha256": "a61889acad834b98663dad4b61ae7b94e5d2ccf4ee03fb51c8ebe8810305cf04",
-    "bytes": 510076,
+    "sha256": "558177b981eda02e067b1869d53f383b11033092018a8d1bf58fca71f443cd0f",
+    "bytes": 590833,
     "algorithm": "toolkit-context-level-desc-v1",
     "tierConvention": "T1Best",
     "equipmentBases": 1836,
     "uniqueAffixPools": 70,
-    "modLevels": 2586
+    "modLevels": 2586,
+    "modTypeMappings": 1391,
+    "uniqueModTypes": 195
   },
   "validation": {
     "baseId": "Metadata/Items/Armours/Boots/FourBootsInt2Endgame",
@@ -104,5 +106,12 @@
     "Tier numbers use the selected per-base ModType/prefix/suffix grouping with distinct Level descending. First-family grouping is not equivalent for all pools.",
     "Independent audit found 425 (unique tag pool, Mod ID) differences between ModType and first-family ranking across 427 tag pools, caused by distinct mod types sharing an exclusion family; these are not treated as confirmed game errors.",
     "52 Item-domain HiddenItem bases are excluded; all supported ordinary equipment classes were covered."
-  ]
+  ],
+  "modTypeExtension": {
+    "source": "Mods.ModType -> ModType.Name from the same pinned decoded tables",
+    "coverage": "Exactly the Mod IDs referenced by Profiles; source names retained verbatim",
+    "previousMappingSha256": "a61889acad834b98663dad4b61ae7b94e5d2ccf4ee03fb51c8ebe8810305cf04",
+    "allPreviousRootFieldsUnchanged": true,
+    "validationScope": "The validation section records the original Tier verification; adding ModTypes does not change Levels, Bases, Profiles, or calculated Tiers."
+  }
 }
