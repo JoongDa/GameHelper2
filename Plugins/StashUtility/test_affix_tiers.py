@@ -1,5 +1,11 @@
-"""Offline ranking/gating regressions; fixtures are NOT real game tier data."""
+"""Offline ranking/gating regressions and bundled-data snapshots.
 
+Artificial fixtures are NOT real game tier data. Snapshot assertions pin the
+current bundled ranking results; they do not establish in-game tier accuracy.
+"""
+
+import json
+from pathlib import Path
 import unittest
 
 from generate_affix_tiers import generate, normalize_mods, rank_pool
@@ -51,6 +57,73 @@ class AffixTiersTests(unittest.TestCase):
                             "ModType": 0, "Level": 54, "SpawnWeight_Tags": [0], "SpawnWeight_Values": [1]}],
                   "ModType": [{"Name": "Life"}], "Tags": [{"Id": "default"}]}
         self.assertEqual(normalize_mods(tables), normalize_mods({}, {"Example": mod(54)}))
+
+    def test_melee_tiers_are_ranked_per_equipment_pool_without_merging_mod_types(self):
+        classes = ["Gloves", "Amulet", "One Hand Mace", "Two Hand Mace"]
+        tables = {"Tags": [], "ItemClasses": [{"Id": value} for value in classes],
+                  "BaseItemTypes": [{"Id": value, "ModDomain": 1, "ItemClass": index, "Tags": []}
+                                    for index, value in enumerate(classes)]}
+
+        def gates(*tags):
+            return [{"tag": tag, "weight": 1} for tag in tags] + [{"tag": "default", "weight": 0}]
+
+        shared_type = "GlobalIncreaseMeleeSkillGemLevel"
+        two_hand_type = "GlobalIncreaseMeleeSkillGemLevelWeapon"
+        data = {"GlobalMeleeSkillGemLevel2": mod(41, group=shared_type, gates=gates("gloves", "amulet")),
+                "GlobalMeleeSkillGemLevel3": mod(75, group=shared_type, gates=gates("amulet")),
+                "GlobalMeleeSkillGemLevelWeapon5": mod(90, group=shared_type,
+                                                        gates=gates("one_hand_weapon")),
+                "GlobalMeleeSkillGemLevelTwoHandWeapon5": mod(100, group=two_hand_type,
+                                                               gates=gates("two_hand_weapon"))}
+        result = generate(tables, "fixture-only", data)
+        pools = {base: result["Profiles"][profile] for base, profile in result["Bases"].items()}
+        self.assertEqual(pools["Gloves"], {"GlobalMeleeSkillGemLevel2": 1})
+        self.assertEqual(pools["Amulet"], {"GlobalMeleeSkillGemLevel2": 2, "GlobalMeleeSkillGemLevel3": 1})
+        self.assertEqual(pools["One Hand Mace"], {"GlobalMeleeSkillGemLevelWeapon5": 1})
+        self.assertEqual(pools["Two Hand Mace"], {"GlobalMeleeSkillGemLevelTwoHandWeapon5": 1})
+        self.assertEqual(result["ModTypes"], {mod_id: row["group"] for mod_id, row in data.items()})
+
+    def test_bundled_snapshot_keeps_melee_tiers_and_eligibility_equipment_specific(self):
+        # Intentional snapshot: an upstream data/algorithm update may require
+        # reviewing these expectations against the newly extracted data.
+        path = Path(__file__).resolve().parent / "Data" / "equipment_affix_tiers.json"
+        document = json.loads(path.read_text(encoding="utf-8-sig"))
+        paths = {"gloves": "Metadata/Items/Armours/Gloves/FourGlovesStr1",
+                 "amulet": "Metadata/Items/Amulets/FourAmulet1",
+                 "one_hand": "Metadata/Items/Weapons/OneHandWeapons/OneHandMaces/FourOneHandMace1",
+                 "two_hand": "Metadata/Items/Weapons/TwoHandWeapons/TwoHandMaces/FourTwoHandMace1"}
+        pools = {name: document["Profiles"][document["Bases"][base]] for name, base in paths.items()}
+        self.assertEqual(pools["gloves"]["GlobalMeleeSkillGemLevel2"], 1)
+        self.assertEqual(pools["amulet"]["GlobalMeleeSkillGemLevel2"], 2)
+        self.assertEqual(pools["amulet"]["GlobalMeleeSkillGemLevel3"], 1)
+        self.assertEqual(pools["one_hand"]["GlobalMeleeSkillGemLevelWeapon5"], 1)
+        self.assertEqual(pools["two_hand"]["GlobalMeleeSkillGemLevelTwoHandWeapon5"], 1)
+        expected_ids = {"gloves": {"GlobalMeleeSkillGemLevel1", "GlobalMeleeSkillGemLevel2"},
+                        "amulet": {f"GlobalMeleeSkillGemLevel{i}" for i in range(1, 4)},
+                        "one_hand": {f"GlobalMeleeSkillGemLevelWeapon{i}" for i in range(2, 6)},
+                        "two_hand": {f"GlobalMeleeSkillGemLevelTwoHandWeapon{i}" for i in range(2, 6)}}
+        for name, pool in pools.items():
+            with self.subTest(equipment=name):
+                self.assertEqual({mod_id for mod_id in pool if mod_id.startswith("GlobalMeleeSkillGemLevel")},
+                                 expected_ids[name])
+        self.assertEqual(document["ModTypes"]["GlobalMeleeSkillGemLevelWeapon5"],
+                         "GlobalIncreaseMeleeSkillGemLevel")
+        self.assertEqual(document["ModTypes"]["GlobalMeleeSkillGemLevelTwoHandWeapon5"],
+                         "GlobalIncreaseMeleeSkillGemLevelWeapon")
+
+    def test_mod_types_use_exact_source_group_for_referenced_ids_only(self):
+        tables = {"Tags": [], "ItemClasses": [{"Id": "Boots"}],
+                  "BaseItemTypes": [{"Id": "Boots", "ModDomain": 1, "ItemClass": 0, "Tags": []}]}
+        data = {"Life999": mod(20, group="ExactLifeType"),
+                "UnrelatedIdentifier": mod(80, group="ExactLifeType"),
+                "Life1": mod(50, group="DifferentType"),
+                "Unavailable": mod(90, group="HiddenType", gates=[{"tag": "ring", "weight": 1}])}
+        result = generate(tables, "fixture-only", data)
+        self.assertEqual(result["ModTypes"], {"Life999": "ExactLifeType",
+                                              "UnrelatedIdentifier": "ExactLifeType",
+                                              "Life1": "DifferentType"})
+        self.assertEqual(set(result["ModTypes"]),
+                         {mod_id for pool in result["Profiles"].values() for mod_id in pool})
 
     def test_irrelevant_base_tags_share_the_same_ranked_pool(self):
         tables = {"Tags": [{"Id": "cosmetic_a"}, {"Id": "cosmetic_b"}],

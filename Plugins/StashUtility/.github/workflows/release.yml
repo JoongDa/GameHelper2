@@ -38,6 +38,9 @@ jobs:
           mkdir -p release/StashUtility
           cp GameHelper2/Plugins/StashUtility/bin/Release/net10.0-windows/win-x64/StashUtility.dll release/StashUtility/
           cp GameHelper2/Plugins/StashUtility/bin/Release/net10.0-windows/win-x64/StashUtility.pdb release/StashUtility/
+          cp -r GameHelper2/Plugins/StashUtility/bin/Release/net10.0-windows/win-x64/Assets release/StashUtility/
+          cp -r GameHelper2/Plugins/StashUtility/bin/Release/net10.0-windows/win-x64/Data release/StashUtility/
+          cp -r GameHelper2/Plugins/StashUtility/bin/Release/net10.0-windows/win-x64/Localization release/StashUtility/
           cd release
           zip -r ../StashUtility.zip StashUtility
 

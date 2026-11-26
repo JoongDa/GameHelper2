@@ -1,4 +1,5 @@
 .claude/
+.plugin-sync/
 
 *.vs
 *.un~

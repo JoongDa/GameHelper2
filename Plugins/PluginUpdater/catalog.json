@@ -1,0 +1,88 @@
+{
+  "PluginDescriptions": [
+    {
+      "Name": "AmanamuVoidAlert",
+      "OriginalAuthor": "MordWraith",
+      "Description": "GameHelper2 plugin",
+      "EndorsedAuthor": "MordWraith",
+      "Forks": [
+        {
+          "Author": "MordWraith",
+          "Location": "MordWraith",
+          "Name": "AmanamuVoidAlert",
+          "Branch": "master"
+        }
+      ]
+    },
+    {
+      "Name": "Autopot",
+      "OriginalAuthor": "MordWraith",
+      "Description": "GameHelper2 plugin",
+      "EndorsedAuthor": "MordWraith",
+      "Forks": [
+        {
+          "Author": "MordWraith",
+          "Location": "MordWraith",
+          "Name": "Autopot",
+          "Branch": "master"
+        }
+      ]
+    },
+    {
+      "Name": "LootTracker",
+      "OriginalAuthor": "yokkenUA",
+      "Description": "GameHelper2 plugin",
+      "EndorsedAuthor": "yokkenUA",
+      "Forks": [
+        {
+          "Author": "yokkenUA",
+          "Location": "yokkenUA",
+          "Name": "LootTracker",
+          "Branch": "main"
+        }
+      ]
+    },
+    {
+      "Name": "SekhemaHelper",
+      "OriginalAuthor": "yokkenUA",
+      "Description": "GameHelper2 plugin",
+      "EndorsedAuthor": "yokkenUA",
+      "Forks": [
+        {
+          "Author": "yokkenUA",
+          "Location": "yokkenUA",
+          "Name": "SekhemaHelper",
+          "Branch": "main"
+        }
+      ]
+    },
+    {
+      "Name": "StashUtility",
+      "OriginalAuthor": "AlexanderHel",
+      "Description": "GameHelper2 plugin",
+      "EndorsedAuthor": "AlexanderHel",
+      "Forks": [
+        {
+          "Author": "AlexanderHel",
+          "Location": "AlexanderHel",
+          "Name": "StashUtility",
+          "Branch": "main"
+        }
+      ]
+    },
+    {
+      "Name": "RunecraftHelper",
+      "OriginalAuthor": "yokkenUA",
+      "Description": "GameHelper2 plugin",
+      "EndorsedAuthor": "yokkenUA",
+      "Forks": [
+        {
+          "Author": "yokkenUA",
+          "Location": "yokkenUA",
+          "Name": "RunecraftHelper",
+          "Branch": "main"
+        }
+      ]
+    }
+  ]
+}

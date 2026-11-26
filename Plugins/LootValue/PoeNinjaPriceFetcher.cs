@@ -57,9 +57,9 @@ namespace LootValue
         private const string ScoutApiBaseUrl = "https://api.poe2scout.com/poe2";
 
         // Bump whenever the cache shape or how the art->name index is built changes, so caches written
-        // by an older plugin version are discarded instead of trusted. (v2: art index now built from
-        // both poe.ninja + poe2scout icons.)
-        private const int CacheSchemaVersion = 2;
+        // by an older plugin version are discarded instead of trusted. (v3: include poe.ninja
+        // lineage support gem prices and their icon mappings.)
+        private const int CacheSchemaVersion = 3;
 
         private static readonly string[] ScoutCurrencyCategories =
         {
@@ -76,7 +76,7 @@ namespace LootValue
         private static readonly string[] NinjaExchangeTypes =
         {
             "Ritual", "Currency", "Runes", "Idols", "Essences", "Fragments", "Abyss", "Breach",
-            "Delirium", "Expedition", "Ultimatum", "UncutGems",
+            "Delirium", "Expedition", "Ultimatum", "UncutGems", "LineageSupportGems",
         };
 
         private static readonly string[] NinjaStashTypes =
